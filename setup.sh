@@ -196,6 +196,12 @@ ok "ansible/vault.yml encrypted with lab_key"
 
 # ── PHASE 4 — Packer builds (counted even when skipped) ───────────────────────
 cd "$PACKER_DIR"
+
+# Init plugins once — downloads github.com/hashicorp/qemu and any other
+# required plugins declared in the HCL files.
+packer init .
+ok "Packer plugins initialised"
+
 for scenario in boot-menu lvm standard; do
   progress "Packer — $scenario"
   artifact="$PACKER_DIR/artifacts/$scenario"
