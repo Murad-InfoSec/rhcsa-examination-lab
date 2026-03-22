@@ -157,7 +157,7 @@ The following tools must be installed on the host before running `setup.sh`:
 </thead>
 <tbody>
   <tr><td>virsh / libvirt</td><td><code>sudo dnf install libvirt virt-install</code></td></tr>
-  <tr><td>virt-customize</td><td><code>sudo dnf install libguestfs-tools</code></td></tr>
+  <tr><td>virt-customize</td><td><code>sudo dnf install guestfs-tools</code></td></tr>
   <tr><td>Packer</td><td><a href="https://developer.hashicorp.com/packer/downloads">hashicorp.com/packer/downloads</a></td></tr>
   <tr><td>Terraform</td><td><a href="https://developer.hashicorp.com/terraform/downloads">hashicorp.com/terraform/downloads</a></td></tr>
   <tr><td>Python 3</td><td><code>sudo dnf install python3</code></td></tr>

@@ -49,7 +49,7 @@ DNF_PKGS=()
 command -v virsh          &>/dev/null || DNF_PKGS+=(libvirt virt-install
                                                     libvirt-daemon-config-network
                                                     libvirt-daemon-kvm)
-command -v virt-customize &>/dev/null || DNF_PKGS+=(libguestfs-tools)
+command -v virt-customize &>/dev/null || DNF_PKGS+=(guestfs-tools)
 command -v python3        &>/dev/null || DNF_PKGS+=(python3 python3-pip)
 { command -v node &>/dev/null && command -v npm &>/dev/null; } \
                                       || DNF_PKGS+=(nodejs npm)
