@@ -1,0 +1,40 @@
+---
+- name: Check tar archive
+  hosts: rhcsa_vm
+  gather_facts: false
+
+  tasks:
+    - name: Stat archive file
+      stat:
+        path: "{{ archive_path }}"
+      register: r_stat
+      ignore_errors: yes
+
+    - name: Check file type and compression
+      command: file {{ archive_path }}
+      register: r_file
+      ignore_errors: yes
+
+    - name: Verify archive is readable
+      command: tar -tf {{ archive_path }}
+      register: r_tar
+      ignore_errors: yes
+
+    - name: Build check results
+      set_fact:
+        check_results:
+          - name: "Archive {{ archive_path }} exists"
+            passed: "{{ r_stat.stat.exists | default(false) }}"
+            message: "{{ 'File exists, size: ' + (r_stat.stat.size | default(0) | string) + ' bytes' if r_stat.stat.exists | default(false) else 'File not found' }}"
+
+          - name: "Archive uses {{ expected_compress }} compression"
+            passed: "{{ expected_compress in (r_file.stdout | default('') | lower) }}"
+            message: "file reports: '{{ r_file.stdout | default('') | trim }}'"
+
+          - name: "Archive is readable (tar list succeeds)"
+            passed: "{{ r_tar.rc | default(1) == 0 }}"
+            message: "{{ 'tar list succeeded' if r_tar.rc | default(1) == 0 else 'tar error: ' + (r_tar.stderr | default('') | trim) }}"
+
+    - name: Print results
+      debug:
+        msg: "ANSIBLE_CHECK_RESULTS={{ check_results | to_json }}"

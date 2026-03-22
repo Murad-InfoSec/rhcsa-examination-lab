@@ -1,0 +1,30 @@
+---
+- name: Check tuned profile
+  hosts: rhcsa_vm
+  gather_facts: false
+
+  tasks:
+    - name: Check tuned service is active
+      command: systemctl is-active tuned
+      register: r_service
+      ignore_errors: yes
+
+    - name: Get active tuned profile
+      command: tuned-adm active
+      register: r_tuned
+      ignore_errors: yes
+
+    - name: Build check results
+      set_fact:
+        check_results:
+          - name: "tuned service is active"
+            passed: "{{ r_service.stdout | default('') | trim == 'active' }}"
+            message: "systemctl is-active tuned: '{{ r_service.stdout | default('') | trim }}'"
+
+          - name: "Active tuned profile is '{{ expected_profile }}'"
+            passed: "{{ expected_profile in (r_tuned.stdout | default('')) }}"
+            message: "tuned-adm active: '{{ r_tuned.stdout | default('') | trim }}'"
+
+    - name: Print results
+      debug:
+        msg: "ANSIBLE_CHECK_RESULTS={{ check_results | to_json }}"

@@ -1,0 +1,21 @@
+# E2E test suite dependencies
+# Install with: pip install -r tests/requirements.txt
+
+# Playwright + pytest integration
+playwright>=1.58.0
+pytest-playwright>=0.7.0
+
+# HTML report generation
+pytest-html>=4.0.0
+
+# Statistical benchmarking
+pytest-benchmark>=4.0.0
+
+# Accessibility auditing (bundles axe-core)
+axe-playwright-python>=0.1.7
+
+# HTTP client for API-level tests
+requests>=2.31.0
+
+# SSH client for VM integration tests (also used by the backend)
+paramiko>=3.4.0

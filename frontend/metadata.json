@@ -1,0 +1,9 @@
+
+{
+  "name": "RHCSA Examination Lab",
+  "description": "A high-performance RHCSA practice platform featuring 20 standardized tasks, real-time terminal simulation, and panel management.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

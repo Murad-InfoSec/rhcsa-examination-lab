@@ -1,0 +1,29 @@
+---
+- name: Check cron job
+  hosts: rhcsa_vm
+  gather_facts: false
+
+  tasks:
+    - name: Get crontab for user
+      command: crontab -l -u {{ cron_user }}
+      register: r_crontab
+      ignore_errors: yes
+
+    - name: Build check results
+      set_fact:
+        check_results:
+          - name: "Crontab exists for {{ cron_user }}"
+            passed: "{{ r_crontab.rc | default(1) == 0 }}"
+            message: "{{ 'Crontab found' if r_crontab.rc | default(1) == 0 else 'No crontab for ' + cron_user }}"
+
+          - name: "Cron schedule minute={{ cron_minute }} hour={{ cron_hour }}"
+            passed: "{{ r_crontab.stdout_lines | default([]) | select('search', cron_minute + '\\s+' + cron_hour) | list | length > 0 }}"
+            message: "Looking for '{{ cron_minute }} {{ cron_hour }}' schedule in crontab"
+
+          - name: "Cron command present"
+            passed: "{{ cron_command in (r_crontab.stdout | default('')) }}"
+            message: "{{ 'Command found' if cron_command in (r_crontab.stdout | default('')) else 'Command not found: ' + cron_command }}"
+
+    - name: Print results
+      debug:
+        msg: "ANSIBLE_CHECK_RESULTS={{ check_results | to_json }}"

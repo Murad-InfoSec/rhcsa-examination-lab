@@ -1,0 +1,71 @@
+---
+- name: Check logical volume creation
+  hosts: rhcsa_vm
+  gather_facts: false
+  become: yes
+
+  tasks:
+    - name: Check primary LV exists in VG
+      shell: "lvs --noheadings -o lv_name {{ vg_name }} 2>/dev/null | tr -d ' ' | grep -w {{ lv_name }}"
+      register: r_lv
+      ignore_errors: yes
+
+    - name: Get primary LV extent count
+      shell: "lvs --noheadings -o lv_le_count {{ vg_name }}/{{ lv_name }} 2>/dev/null | tr -d ' '"
+      register: r_extents
+      ignore_errors: yes
+
+    - name: Get filesystem type on primary LV
+      shell: "blkid -o value -s TYPE /dev/{{ vg_name }}/{{ lv_name }} 2>/dev/null"
+      register: r_fstype
+      ignore_errors: yes
+
+    - name: Check LV mounted at mount_point in fstab
+      shell: >
+        grep -E '/dev/{{ vg_name }}/{{ lv_name }}|/dev/mapper/{{ vg_name }}-{{ lv_name }}' /etc/fstab |
+        grep -q '{{ mount_point }}' && echo found || echo missing
+      register: r_fstab
+      ignore_errors: yes
+
+    - name: Verify mount point is currently mounted
+      shell: "mountpoint -q {{ mount_point }} && echo mounted || echo not mounted"
+      register: r_mounted
+      ignore_errors: yes
+
+    - name: Get largest LV size in secondary VG
+      shell: >
+        lvs --noheadings -o lv_size --units m {{ vg2_name }} 2>/dev/null |
+        tr -d ' ' | sed 's/[mM]//g' | cut -d. -f1 | sort -n | tail -1
+      register: r_lv2_size
+      ignore_errors: yes
+
+    - name: Build check results
+      set_fact:
+        check_results:
+          - name: "LV '{{ lv_name }}' exists in VG '{{ vg_name }}'"
+            passed: "{{ r_lv.rc | default(1) == 0 }}"
+            message: "{{ 'LV found' if r_lv.rc | default(1) == 0 else 'LV not found in VG ' + vg_name }}"
+
+          - name: "LV has {{ size_extents }} extents"
+            passed: "{{ r_extents.stdout | default('0') | trim | int == size_extents | int }}"
+            message: "Extents: {{ r_extents.stdout | default('0') | trim }} (expected {{ size_extents }})"
+
+          - name: "Filesystem type is {{ fs_type }}"
+            passed: "{{ fs_type in (r_fstype.stdout | default('') | lower) }}"
+            message: "FS type: '{{ r_fstype.stdout | default('unknown') | trim }}'"
+
+          - name: "LV mounted at {{ mount_point }} (in fstab)"
+            passed: "{{ r_fstab.stdout | default('') | trim == 'found' }}"
+            message: "{{ 'fstab entry found' if r_fstab.stdout | default('') | trim == 'found' else 'No fstab entry found' }}"
+
+          - name: "{{ mount_point }} is currently mounted"
+            passed: "{{ r_mounted.stdout | default('') | trim == 'mounted' }}"
+            message: "{{ r_mounted.stdout | default('') | trim }}"
+
+          - name: "VG '{{ vg2_name }}' has LV of approximately {{ lv2_size_mib }}MB"
+            passed: "{{ (r_lv2_size.stdout | default('0') | trim | int) >= (lv2_size_mib | int - 2) and (r_lv2_size.stdout | default('0') | trim | int) <= (lv2_size_mib | int + 2) }}"
+            message: "Largest LV in {{ vg2_name }}: {{ r_lv2_size.stdout | default('0') | trim }}MB (expected ~{{ lv2_size_mib }}MB)"
+
+    - name: Print results
+      debug:
+        msg: "ANSIBLE_CHECK_RESULTS={{ check_results | to_json }}"

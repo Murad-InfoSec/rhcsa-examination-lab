@@ -1,0 +1,85 @@
+---
+- name: Check users and groups
+  hosts: rhcsa_vm
+  gather_facts: false
+
+  tasks:
+    - name: Check group exists
+      command: getent group {{ group_name }}
+      register: r_group
+      ignore_errors: yes
+
+    - name: Check harry user id
+      command: id {{ user_harry }}
+      register: r_harry_id
+      ignore_errors: yes
+
+    - name: Check natasha user id
+      command: id {{ user_natasha }}
+      register: r_natasha_id
+      ignore_errors: yes
+
+    - name: Check noshell user passwd entry
+      command: getent passwd {{ user_noshell }}
+      register: r_noshell
+      ignore_errors: yes
+
+    - name: Check noshell user group membership
+      command: id {{ user_noshell }}
+      register: r_noshell_id
+      ignore_errors: yes
+
+    - name: Check harry password hash
+      shell: >
+        python3 -c "import crypt, spwd;
+        s=spwd.getspnam('{{ user_harry }}');
+        print('OK' if crypt.crypt('{{ password_hash_check }}', s.sp_pwd) == s.sp_pwd else 'FAIL')"
+      register: r_harry_pass
+      become: yes
+      ignore_errors: yes
+      no_log: true
+
+    - name: Check natasha password hash
+      shell: >
+        python3 -c "import crypt, spwd;
+        s=spwd.getspnam('{{ user_natasha }}');
+        print('OK' if crypt.crypt('{{ password_hash_check }}', s.sp_pwd) == s.sp_pwd else 'FAIL')"
+      register: r_natasha_pass
+      become: yes
+      ignore_errors: yes
+      no_log: true
+
+    - name: Build check results
+      set_fact:
+        check_results:
+          - name: "Group '{{ group_name }}' exists"
+            passed: "{{ r_group.rc | default(1) == 0 }}"
+            message: "{{ r_group.stdout | default('Group not found') | trim }}"
+
+          - name: "{{ user_harry }} is in group {{ group_name }}"
+            passed: "{{ group_name in (r_harry_id.stdout | default('')) }}"
+            message: "{{ r_harry_id.stdout | default('user not found') | trim }}"
+
+          - name: "{{ user_natasha }} is in group {{ group_name }}"
+            passed: "{{ group_name in (r_natasha_id.stdout | default('')) }}"
+            message: "{{ r_natasha_id.stdout | default('user not found') | trim }}"
+
+          - name: "{{ user_noshell }} has nologin shell"
+            passed: "{{ 'nologin' in (r_noshell.stdout | default('')) }}"
+            message: "{{ r_noshell.stdout | default('user not found') | trim }}"
+
+          - name: "{{ user_noshell }} is NOT in group {{ group_name }}"
+            passed: "{{ group_name not in (r_noshell_id.stdout | default('')) }}"
+            message: "id: {{ r_noshell_id.stdout | default('user not found') | trim }}"
+
+          - name: "{{ user_harry }} password correct"
+            passed: "{{ r_harry_pass.stdout | default('') | trim == 'OK' }}"
+            message: "Password verification {{ 'passed' if r_harry_pass.stdout | default('') | trim == 'OK' else 'failed' }}"
+
+          - name: "{{ user_natasha }} password correct"
+            passed: "{{ r_natasha_pass.stdout | default('') | trim == 'OK' }}"
+            message: "Password verification {{ 'passed' if r_natasha_pass.stdout | default('') | trim == 'OK' else 'failed' }}"
+
+    - name: Print results
+      debug:
+        msg: "ANSIBLE_CHECK_RESULTS={{ check_results | to_json }}"

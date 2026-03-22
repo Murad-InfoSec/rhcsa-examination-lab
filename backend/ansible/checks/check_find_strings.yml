@@ -1,0 +1,40 @@
+---
+- name: Check find strings in file
+  hosts: rhcsa_vm
+  gather_facts: false
+
+  tasks:
+    - name: Stat destination file
+      stat:
+        path: "{{ dest_file }}"
+      register: r_stat
+      ignore_errors: yes
+
+    - name: Count matches in destination file
+      command: grep -c {{ search_string }} {{ dest_file }}
+      register: r_grep_dest
+      ignore_errors: yes
+
+    - name: Count matches in source file
+      command: grep -c {{ search_string }} {{ source_file }}
+      register: r_grep_source
+      ignore_errors: yes
+
+    - name: Build check results
+      set_fact:
+        check_results:
+          - name: "Destination file {{ dest_file }} exists"
+            passed: "{{ r_stat.stat.exists | default(false) }}"
+            message: "{{ 'File exists' if r_stat.stat.exists | default(false) else 'File not found' }}"
+
+          - name: "{{ dest_file }} contains '{{ search_string }}'"
+            passed: "{{ r_grep_dest.rc | default(1) == 0 }}"
+            message: "{{ r_grep_dest.stdout | default('0') | trim }} matching line(s) found"
+
+          - name: "Line count matches source grep"
+            passed: "{{ r_grep_dest.stdout | default('0') | trim == r_grep_source.stdout | default('0') | trim }}"
+            message: "dest={{ r_grep_dest.stdout | default('0') | trim }} source={{ r_grep_source.stdout | default('0') | trim }}"
+
+    - name: Print results
+      debug:
+        msg: "ANSIBLE_CHECK_RESULTS={{ check_results | to_json }}"

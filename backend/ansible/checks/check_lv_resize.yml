@@ -1,0 +1,54 @@
+---
+- name: Check logical volume resize
+  hosts: rhcsa_vm
+  gather_facts: false
+  become: yes
+
+  tasks:
+    - name: Auto-detect VG name when vg_name is empty
+      shell: "lvs --noheadings -S lv_name={{ lv_name }} -o vg_name 2>/dev/null | tr -d ' ' | head -1"
+      register: r_vg_auto
+      when: vg_name | default('') | length == 0
+      ignore_errors: yes
+
+    - name: Set effective VG name
+      set_fact:
+        effective_vg: "{{ vg_name if vg_name | default('') | length > 0 else r_vg_auto.stdout | default('') | trim }}"
+
+    - name: Get LV size in MB
+      shell: "lvs --units m --noheadings -o lv_size {{ effective_vg }}/{{ lv_name }} 2>/dev/null | tr -d ' ' | sed 's/[mM]//g' | cut -d. -f1"
+      register: r_lv_size_mb
+      ignore_errors: yes
+
+    - name: Get LV extent count
+      shell: "lvs --noheadings -o lv_le_count {{ effective_vg }}/{{ lv_name }} 2>/dev/null | tr -d ' '"
+      register: r_lv_extents
+      ignore_errors: yes
+
+    - name: Build check results (range_mb mode)
+      set_fact:
+        check_results:
+          - name: "LV {{ lv_name }} exists in VG {{ effective_vg }}"
+            passed: "{{ r_lv_size_mb.rc | default(1) == 0 }}"
+            message: "LV size: {{ r_lv_size_mb.stdout | default('unknown') | trim }}MB"
+
+          - name: "LV size is between {{ size_min_mb }}MB and {{ size_max_mb }}MB"
+            passed: "{{ (r_lv_size_mb.stdout | default('0') | trim | int) >= (size_min_mb | int) and (r_lv_size_mb.stdout | default('0') | trim | int) <= (size_max_mb | int) }}"
+            message: "LV size: {{ r_lv_size_mb.stdout | default('0') | trim }}MB (expected {{ size_min_mb }}-{{ size_max_mb }}MB)"
+      when: check_mode | default('range_mb') == 'range_mb'
+
+    - name: Build check results (extents mode)
+      set_fact:
+        check_results:
+          - name: "LV {{ lv_name }} exists in VG {{ effective_vg }}"
+            passed: "{{ r_lv_extents.rc | default(1) == 0 }}"
+            message: "LV extents: {{ r_lv_extents.stdout | default('unknown') | trim }}"
+
+          - name: "LV has {{ size_extents }} extents"
+            passed: "{{ r_lv_extents.stdout | default('0') | trim | int == size_extents | int }}"
+            message: "LV extents: {{ r_lv_extents.stdout | default('0') | trim }} (expected {{ size_extents }})"
+      when: check_mode | default('range_mb') == 'extents'
+
+    - name: Print results
+      debug:
+        msg: "ANSIBLE_CHECK_RESULTS={{ check_results | to_json }}"

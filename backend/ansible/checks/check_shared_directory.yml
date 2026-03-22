@@ -1,0 +1,53 @@
+---
+- name: Check shared collaborative directory
+  hosts: rhcsa_vm
+  gather_facts: false
+
+  tasks:
+    - name: Stat directory
+      stat:
+        path: "{{ dir_path }}"
+      register: r_stat
+      ignore_errors: yes
+
+    - name: Get directory group owner
+      command: stat -c %G {{ dir_path }}
+      register: r_group
+      ignore_errors: yes
+
+    - name: Get directory mode
+      command: stat -c %a {{ dir_path }}
+      register: r_mode
+      ignore_errors: yes
+
+    - name: Create test file to verify setgid inheritance
+      shell: |
+        touch {{ dir_path }}/.ansible_check_tmp
+        group=$(stat -c %G {{ dir_path }}/.ansible_check_tmp)
+        rm -f {{ dir_path }}/.ansible_check_tmp
+        echo "$group"
+      register: r_inherit
+      ignore_errors: yes
+
+    - name: Build check results
+      set_fact:
+        check_results:
+          - name: "Directory {{ dir_path }} exists"
+            passed: "{{ r_stat.stat.isdir | default(false) }}"
+            message: "{{ 'Directory exists' if r_stat.stat.isdir | default(false) else 'Directory not found' }}"
+
+          - name: "Group ownership is {{ group_name }}"
+            passed: "{{ r_group.stdout | default('') | trim == group_name }}"
+            message: "Group owner: '{{ r_group.stdout | default('unknown') | trim }}'"
+
+          - name: "Mode is 2770 (setgid + rwx for owner and group)"
+            passed: "{{ r_mode.stdout | default('') | trim == '2770' }}"
+            message: "Mode: '{{ r_mode.stdout | default('unknown') | trim }}'"
+
+          - name: "New files inherit group {{ group_name }} (setgid effective)"
+            passed: "{{ r_inherit.stdout | default('') | trim == group_name }}"
+            message: "Inherited group: '{{ r_inherit.stdout | default('unknown') | trim }}'"
+
+    - name: Print results
+      debug:
+        msg: "ANSIBLE_CHECK_RESULTS={{ check_results | to_json }}"

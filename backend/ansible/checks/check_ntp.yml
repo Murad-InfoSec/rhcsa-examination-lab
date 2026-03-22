@@ -1,0 +1,39 @@
+---
+- name: Check NTP client configuration
+  hosts: rhcsa_vm
+  gather_facts: false
+
+  tasks:
+    - name: Check chronyd is active
+      command: systemctl is-active chronyd
+      register: r_service
+      ignore_errors: yes
+
+    - name: Get chrony.conf content
+      command: cat /etc/chrony.conf
+      register: r_conf
+      ignore_errors: yes
+
+    - name: Get chronyc sources
+      command: chronyc sources
+      register: r_sources
+      ignore_errors: yes
+
+    - name: Build check results
+      set_fact:
+        check_results:
+          - name: "chronyd service is active"
+            passed: "{{ r_service.stdout | default('') | trim == 'active' }}"
+            message: "systemctl is-active chronyd: '{{ r_service.stdout | default('') | trim }}'"
+
+          - name: "{{ ntp_server }} configured in /etc/chrony.conf"
+            passed: "{{ ntp_server in (r_conf.stdout | default('')) }}"
+            message: "{{ 'Found ' + ntp_server + ' in chrony.conf' if ntp_server in (r_conf.stdout | default('')) else ntp_server + ' not found in /etc/chrony.conf' }}"
+
+          - name: "chronyc sources reachable"
+            passed: "{{ r_sources.rc | default(1) == 0 }}"
+            message: "{{ r_sources.stdout | default('chronyc not reachable') | truncate(200) }}"
+
+    - name: Print results
+      debug:
+        msg: "ANSIBLE_CHECK_RESULTS={{ check_results | to_json }}"

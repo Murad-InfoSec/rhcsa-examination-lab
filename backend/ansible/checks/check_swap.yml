@@ -1,0 +1,40 @@
+---
+- name: Check swap partition
+  hosts: rhcsa_vm
+  gather_facts: false
+  become: yes
+
+  tasks:
+    - name: Get active swap devices
+      command: swapon --show --bytes
+      register: r_swapon
+      ignore_errors: yes
+
+    - name: Get total swap in MB
+      shell: "free -m | grep Swap | awk '{print $2}'"
+      register: r_swap_total
+      ignore_errors: yes
+
+    - name: Check swap entry in fstab
+      shell: "grep -i swap /etc/fstab"
+      register: r_fstab
+      ignore_errors: yes
+
+    - name: Build check results
+      set_fact:
+        check_results:
+          - name: "Swap is active"
+            passed: "{{ r_swapon.rc | default(1) == 0 and (r_swapon.stdout | default('')) | length > 0 }}"
+            message: "{{ r_swapon.stdout | default('No swap active') | trim }}"
+
+          - name: "Swap size is between {{ swap_size_min_mb }}MB and {{ swap_size_max_mb }}MB"
+            passed: "{{ (r_swap_total.stdout | default('0') | trim | int) >= (swap_size_min_mb | int) and (r_swap_total.stdout | default('0') | trim | int) <= (swap_size_max_mb | int) }}"
+            message: "Total swap: {{ r_swap_total.stdout | default('0') | trim }}MB (expected {{ swap_size_min_mb }}-{{ swap_size_max_mb }}MB)"
+
+          - name: "Swap configured in /etc/fstab (persistent)"
+            passed: "{{ r_fstab.rc | default(1) == 0 }}"
+            message: "{{ r_fstab.stdout | default('No swap entry in fstab') | trim }}"
+
+    - name: Print results
+      debug:
+        msg: "ANSIBLE_CHECK_RESULTS={{ check_results | to_json }}"

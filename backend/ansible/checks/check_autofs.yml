@@ -1,0 +1,65 @@
+---
+- name: Check autofs NFS automount
+  hosts: rhcsa_vm
+  gather_facts: false
+
+  tasks:
+    - name: Check autofs package installed
+      command: rpm -q autofs
+      register: r_rpm
+      ignore_errors: yes
+
+    - name: Check autofs service active
+      command: systemctl is-active autofs
+      register: r_service
+      ignore_errors: yes
+
+    - name: Get auto.master content
+      shell: "cat /etc/auto.master /etc/auto.master.d/*.autofs 2>/dev/null || true"
+      register: r_master
+      ignore_errors: yes
+
+    - name: Find auto map files in /etc
+      find:
+        paths: /etc
+        patterns: "auto.*"
+        file_type: file
+      register: r_map_files
+      ignore_errors: yes
+
+    - name: Read all auto map file contents
+      command: cat {{ item.path }}
+      loop: "{{ r_map_files.files | default([]) }}"
+      register: r_map_contents
+      ignore_errors: yes
+
+    - name: Combine map file contents
+      set_fact:
+        all_map_text: "{{ r_map_contents.results | map(attribute='stdout') | join('\n') }}"
+
+    - name: Build check results
+      set_fact:
+        check_results:
+          - name: "autofs package installed"
+            passed: "{{ r_rpm.rc | default(1) == 0 }}"
+            message: "{{ r_rpm.stdout | default('autofs not installed') | trim }}"
+
+          - name: "autofs service is active"
+            passed: "{{ r_service.stdout | default('') | trim == 'active' }}"
+            message: "systemctl is-active autofs: '{{ r_service.stdout | default('') | trim }}'"
+
+          - name: "auto.master references {{ mount_base }}"
+            passed: "{{ mount_base in (r_master.stdout | default('')) }}"
+            message: "{{ 'Found ' + mount_base + ' in auto.master' if mount_base in (r_master.stdout | default('')) else mount_base + ' not found in auto.master' }}"
+
+          - name: "Map file references NFS export {{ nfs_export }}"
+            passed: "{{ nfs_export in all_map_text }}"
+            message: "{{ 'Found ' + nfs_export if nfs_export in all_map_text else nfs_export + ' not found in any auto map file' }}"
+
+          - name: "Map file references NFS server {{ nfs_server }}"
+            passed: "{{ nfs_server in all_map_text or nfs_server_ip in all_map_text }}"
+            message: "{{ 'Found NFS server reference' if nfs_server in all_map_text or nfs_server_ip in all_map_text else 'NFS server not found in map files' }}"
+
+    - name: Print results
+      debug:
+        msg: "ANSIBLE_CHECK_RESULTS={{ check_results | to_json }}"

@@ -1,0 +1,102 @@
+---
+- name: Check container systemd service
+  hosts: rhcsa_vm
+  gather_facts: false
+
+  tasks:
+    - name: Check container user exists
+      command: id {{ container_user }}
+      register: r_user
+      ignore_errors: yes
+
+    - name: Get container user home directory
+      shell: "getent passwd {{ container_user }} | cut -d: -f6"
+      register: r_home
+      ignore_errors: yes
+
+    - name: Check systemd user service file exists
+      stat:
+        path: "{{ r_home.stdout | trim }}/.config/systemd/user/{{ service_name }}"
+      register: r_service_file
+      ignore_errors: yes
+
+    - name: Check linger is enabled for user
+      stat:
+        path: "/var/lib/systemd/linger/{{ container_user }}"
+      register: r_linger
+      ignore_errors: yes
+
+    - name: Check container is running
+      shell: |
+        uid=$(id -u {{ container_user }} 2>/dev/null)
+        if sudo -u {{ container_user }} bash -c "XDG_RUNTIME_DIR=/run/user/$uid podman ps 2>/dev/null" | grep -q '{{ container_name }}'; then
+          echo "running"
+        else
+          echo "not running"
+        fi
+      register: r_podman
+      ignore_errors: yes
+
+    - name: Check service is active via systemctl user
+      shell: |
+        uid=$(id -u {{ container_user }} 2>/dev/null)
+        sudo -u {{ container_user }} bash -c "XDG_RUNTIME_DIR=/run/user/$uid systemctl --user is-active {{ service_name }} 2>/dev/null || echo inactive"
+      register: r_service_active
+      ignore_errors: yes
+
+    - name: Check mount point 1 in container config
+      shell: |
+        uid=$(id -u {{ container_user }} 2>/dev/null)
+        if sudo -u {{ container_user }} bash -c "XDG_RUNTIME_DIR=/run/user/$uid podman inspect {{ container_name }} 2>/dev/null" | grep -q '{{ mount_dst_1 }}'; then
+          echo "found"
+        else
+          echo "missing"
+        fi
+      register: r_mount1
+      ignore_errors: yes
+
+    - name: Check mount point 2 in container config
+      shell: |
+        uid=$(id -u {{ container_user }} 2>/dev/null)
+        if sudo -u {{ container_user }} bash -c "XDG_RUNTIME_DIR=/run/user/$uid podman inspect {{ container_name }} 2>/dev/null" | grep -q '{{ mount_dst_2 }}'; then
+          echo "found"
+        else
+          echo "missing"
+        fi
+      register: r_mount2
+      ignore_errors: yes
+
+    - name: Build check results
+      set_fact:
+        check_results:
+          - name: "User '{{ container_user }}' exists"
+            passed: "{{ r_user.rc | default(1) == 0 }}"
+            message: "{{ r_user.stdout | default('User not found') | trim }}"
+
+          - name: "Systemd user service file {{ service_name }} exists"
+            passed: "{{ r_service_file.stat.exists | default(false) }}"
+            message: "{{ 'Service file found' if r_service_file.stat.exists | default(false) else 'Service file not found at ~/.config/systemd/user/' + service_name }}"
+
+          - name: "Linger enabled for {{ container_user }}"
+            passed: "{{ r_linger.stat.exists | default(false) }}"
+            message: "{{ 'Linger enabled' if r_linger.stat.exists | default(false) else 'Linger not enabled - service will not persist across reboots' }}"
+
+          - name: "Container {{ container_name }} is running"
+            passed: "{{ r_podman.stdout | default('') | trim == 'running' }}"
+            message: "{{ r_podman.stdout | default('not running') | trim }}"
+
+          - name: "Service {{ service_name }} is active"
+            passed: "{{ r_service_active.stdout | default('') | trim == 'active' }}"
+            message: "systemctl --user is-active: '{{ r_service_active.stdout | default('') | trim }}'"
+
+          - name: "Mount {{ mount_dst_1 }} configured in container"
+            passed: "{{ r_mount1.stdout | default('') | trim == 'found' }}"
+            message: "{{ 'Mount ' + mount_dst_1 + ' found' if r_mount1.stdout | default('') | trim == 'found' else 'Mount ' + mount_dst_1 + ' not found in container config' }}"
+
+          - name: "Mount {{ mount_dst_2 }} configured in container"
+            passed: "{{ r_mount2.stdout | default('') | trim == 'found' }}"
+            message: "{{ 'Mount ' + mount_dst_2 + ' found' if r_mount2.stdout | default('') | trim == 'found' else 'Mount ' + mount_dst_2 + ' not found in container config' }}"
+
+    - name: Print results
+      debug:
+        msg: "ANSIBLE_CHECK_RESULTS={{ check_results | to_json }}"

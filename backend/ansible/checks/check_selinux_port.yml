@@ -1,0 +1,52 @@
+---
+- name: Check SELinux port and Apache on custom port
+  hosts: rhcsa_vm
+  gather_facts: false
+
+  tasks:
+    - name: Check SELinux http_port_t includes target port
+      shell: semanage port -l | grep http_port_t
+      register: r_semanage
+      ignore_errors: yes
+
+    - name: Check httpd service is running
+      command: systemctl is-active httpd
+      register: r_httpd
+      ignore_errors: yes
+
+    - name: Check port is listening
+      command: ss -tlnp
+      register: r_ss
+      ignore_errors: yes
+
+    - name: Hit localhost on target port
+      uri:
+        url: "http://localhost:{{ port }}"
+        method: GET
+        status_code: [200, 301, 302, 403]
+        timeout: 5
+      register: r_uri
+      ignore_errors: yes
+
+    - name: Build check results
+      set_fact:
+        check_results:
+          - name: "SELinux allows http_port_t on port {{ port }}"
+            passed: "{{ port | string in (r_semanage.stdout | default('')) }}"
+            message: "{{ 'Port ' + port | string + ' found in http_port_t' if port | string in (r_semanage.stdout | default('')) else 'Port ' + port | string + ' not in semanage http_port_t list' }}"
+
+          - name: "httpd service is active"
+            passed: "{{ r_httpd.stdout | default('') | trim == 'active' }}"
+            message: "systemctl is-active httpd: '{{ r_httpd.stdout | default('') | trim }}'"
+
+          - name: "Port {{ port }} is listening"
+            passed: "{{ ':' + port | string in (r_ss.stdout | default('')) }}"
+            message: "{{ 'Port ' + port | string + ' found in ss output' if ':' + port | string in (r_ss.stdout | default('')) else 'Port ' + port | string + ' not listening' }}"
+
+          - name: "HTTP response on port {{ port }}"
+            passed: "{{ r_uri.status | default(0) in [200, 301, 302, 403] }}"
+            message: "HTTP status: {{ r_uri.status | default('no response') }}"
+
+    - name: Print results
+      debug:
+        msg: "ANSIBLE_CHECK_RESULTS={{ check_results | to_json }}"

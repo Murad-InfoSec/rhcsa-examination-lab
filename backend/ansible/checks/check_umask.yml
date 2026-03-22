@@ -1,0 +1,66 @@
+---
+- name: Check default file permissions (umask)
+  hosts: rhcsa_vm
+  gather_facts: false
+
+  tasks:
+    - name: Check user exists
+      command: id {{ username }}
+      register: r_user
+      ignore_errors: yes
+
+    - name: Search for umask in profile files
+      shell: |
+        homedir=$(getent passwd {{ username }} | cut -d: -f6)
+        grep -rh 'umask' \
+          /etc/profile \
+          /etc/bashrc \
+          /etc/profile.d/ \
+          "$homedir/.bashrc" \
+          "$homedir/.bash_profile" \
+          2>/dev/null || true
+      register: r_umask_grep
+      ignore_errors: yes
+
+    - name: Create test file as user and check permissions
+      shell: |
+        tmpdir=$(mktemp -d /tmp/.ansible_umask_XXXXX)
+        chown {{ username }} "$tmpdir"
+        perm=$(su -s /bin/bash -l {{ username }} -c "touch $tmpdir/testfile && stat -c %a $tmpdir/testfile")
+        rm -rf "$tmpdir"
+        echo "$perm"
+      register: r_file_perm
+      ignore_errors: yes
+
+    - name: Create test directory as user and check permissions
+      shell: |
+        tmpdir=$(mktemp -d /tmp/.ansible_umask_XXXXX)
+        chown {{ username }} "$tmpdir"
+        perm=$(su -s /bin/bash -l {{ username }} -c "mkdir $tmpdir/testdir && stat -c %a $tmpdir/testdir")
+        rm -rf "$tmpdir"
+        echo "$perm"
+      register: r_dir_perm
+      ignore_errors: yes
+
+    - name: Build check results
+      set_fact:
+        check_results:
+          - name: "User '{{ username }}' exists"
+            passed: "{{ r_user.rc | default(1) == 0 }}"
+            message: "{{ r_user.stdout | default('User not found') | trim }}"
+
+          - name: "umask configured in profile files"
+            passed: "{{ (r_umask_grep.stdout | default('')) | length > 0 }}"
+            message: "{{ r_umask_grep.stdout | default('No umask found in profile files') | trim }}"
+
+          - name: "New files have permissions {{ expected_file_perm }}"
+            passed: "{{ r_file_perm.stdout | default('') | trim == expected_file_perm | string }}"
+            message: "File permissions: '{{ r_file_perm.stdout | default('') | trim }}', expected '{{ expected_file_perm }}'"
+
+          - name: "New directories have permissions {{ expected_dir_perm }}"
+            passed: "{{ r_dir_perm.stdout | default('') | trim == expected_dir_perm | string }}"
+            message: "Dir permissions: '{{ r_dir_perm.stdout | default('') | trim }}', expected '{{ expected_dir_perm }}'"
+
+    - name: Print results
+      debug:
+        msg: "ANSIBLE_CHECK_RESULTS={{ check_results | to_json }}"

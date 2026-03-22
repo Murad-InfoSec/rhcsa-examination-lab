@@ -1,0 +1,40 @@
+---
+- name: Check find files by owner
+  hosts: rhcsa_vm
+  gather_facts: false
+
+  tasks:
+    - name: Stat destination path
+      stat:
+        path: "{{ dest_path }}"
+      register: r_stat
+      ignore_errors: yes
+
+    - name: Count files at destination
+      shell: "ls {{ dest_path }} 2>/dev/null | wc -l"
+      register: r_count
+      ignore_errors: yes
+
+    - name: Count files owned by user in search path (sampled to depth 4)
+      shell: "find {{ search_path }} -maxdepth 4 -user {{ owner_user }} -type f 2>/dev/null | wc -l"
+      register: r_source_count
+      ignore_errors: yes
+
+    - name: Build check results
+      set_fact:
+        check_results:
+          - name: "Destination {{ dest_path }} exists"
+            passed: "{{ r_stat.stat.exists | default(false) }}"
+            message: "{{ 'Path exists' if r_stat.stat.exists | default(false) else 'Path not found: ' + dest_path }}"
+
+          - name: "Destination is not empty"
+            passed: "{{ (r_count.stdout | default('0') | trim | int) > 0 }}"
+            message: "{{ r_count.stdout | default('0') | trim }} file(s) found at destination"
+
+          - name: "Files owned by {{ owner_user }} exist in {{ search_path }}"
+            passed: "{{ (r_source_count.stdout | default('0') | trim | int) > 0 }}"
+            message: "{{ r_source_count.stdout | default('0') | trim }} file(s) owned by {{ owner_user }} found (sampled to depth 4)"
+
+    - name: Print results
+      debug:
+        msg: "ANSIBLE_CHECK_RESULTS={{ check_results | to_json }}"

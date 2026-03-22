@@ -1,0 +1,36 @@
+---
+- name: Check container image built
+  hosts: rhcsa_vm
+  gather_facts: false
+
+  tasks:
+    - name: Check container user exists
+      command: id {{ container_user }}
+      register: r_user
+      ignore_errors: yes
+
+    - name: Check image exists in user's podman
+      shell: |
+        uid=$(id -u {{ container_user }} 2>/dev/null)
+        if sudo -u {{ container_user }} bash -c "XDG_RUNTIME_DIR=/run/user/$uid podman images 2>/dev/null" | grep -q '{{ image_name }}'; then
+          echo "found"
+        else
+          echo "not found"
+        fi
+      register: r_image
+      ignore_errors: yes
+
+    - name: Build check results
+      set_fact:
+        check_results:
+          - name: "User '{{ container_user }}' exists"
+            passed: "{{ r_user.rc | default(1) == 0 }}"
+            message: "{{ r_user.stdout | default('User not found') | trim }}"
+
+          - name: "Container image '{{ image_name }}' exists for {{ container_user }}"
+            passed: "{{ r_image.stdout | default('') | trim == 'found' }}"
+            message: "{{ 'Image ' + image_name + ' found in podman images' if r_image.stdout | default('') | trim == 'found' else 'Image ' + image_name + ' not found' }}"
+
+    - name: Print results
+      debug:
+        msg: "ANSIBLE_CHECK_RESULTS={{ check_results | to_json }}"

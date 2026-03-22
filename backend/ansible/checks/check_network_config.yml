@@ -1,0 +1,48 @@
+---
+- name: Check network configuration
+  hosts: rhcsa_vm
+  gather_facts: false
+
+  tasks:
+    - name: Get hostname
+      command: hostnamectl --static
+      register: r_hostname
+      ignore_errors: yes
+
+    - name: Get IP addresses
+      command: ip addr show enp2s0
+      register: r_ip_addr
+      ignore_errors: yes
+
+    - name: Get default route
+      command: ip route show default
+      register: r_route
+      ignore_errors: yes
+
+    - name: Get DNS config
+      command: cat /etc/resolv.conf
+      register: r_resolv
+      ignore_errors: yes
+
+    - name: Build check results
+      set_fact:
+        check_results:
+          - name: "Hostname is {{ expected_hostname }}"
+            passed: "{{ r_hostname.stdout | default('') | trim == expected_hostname }}"
+            message: "Got '{{ r_hostname.stdout | default('') | trim }}'"
+
+          - name: "IP address configured on enp2s0"
+            passed: "{{ 'inet ' in (r_ip_addr.stdout | default('')) }}"
+            message: "{{ 'Found' if 'inet ' in (r_ip_addr.stdout | default('')) else 'No inet address on enp2s0' }}"
+
+          - name: "Default gateway {{ expected_gateway }} configured"
+            passed: "{{ expected_gateway in (r_route.stdout | default('')) }}"
+            message: "{{ 'Found' if expected_gateway in (r_route.stdout | default('')) else 'Not found in ip route output' }}"
+
+          - name: "DNS server {{ expected_dns }} configured"
+            passed: "{{ expected_dns in (r_resolv.stdout | default('')) }}"
+            message: "{{ 'Found' if expected_dns in (r_resolv.stdout | default('')) else 'Not found in /etc/resolv.conf' }}"
+
+    - name: Print results
+      debug:
+        msg: "ANSIBLE_CHECK_RESULTS={{ check_results | to_json }}"

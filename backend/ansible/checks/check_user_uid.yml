@@ -1,0 +1,39 @@
+---
+- name: Check user with specific UID
+  hosts: rhcsa_vm
+  gather_facts: false
+
+  tasks:
+    - name: Check user exists and get UID
+      command: id -u {{ username }}
+      register: r_uid
+      ignore_errors: yes
+
+    - name: Check user password hash
+      shell: >
+        python3 -c "import crypt, spwd;
+        s=spwd.getspnam('{{ username }}');
+        print('OK' if crypt.crypt('{{ password }}', s.sp_pwd) == s.sp_pwd else 'FAIL')"
+      register: r_pass
+      become: yes
+      ignore_errors: yes
+      no_log: true
+
+    - name: Build check results
+      set_fact:
+        check_results:
+          - name: "User '{{ username }}' exists"
+            passed: "{{ r_uid.rc | default(1) == 0 }}"
+            message: "{{ 'UID: ' + r_uid.stdout | default('') | trim if r_uid.rc | default(1) == 0 else 'User not found' }}"
+
+          - name: "User '{{ username }}' has UID {{ uid }}"
+            passed: "{{ r_uid.stdout | default('') | trim == uid | string }}"
+            message: "Expected UID {{ uid }}, got '{{ r_uid.stdout | default('') | trim }}'"
+
+          - name: "User '{{ username }}' password correct"
+            passed: "{{ r_pass.stdout | default('') | trim == 'OK' }}"
+            message: "Password verification {{ 'passed' if r_pass.stdout | default('') | trim == 'OK' else 'failed' }}"
+
+    - name: Print results
+      debug:
+        msg: "ANSIBLE_CHECK_RESULTS={{ check_results | to_json }}"

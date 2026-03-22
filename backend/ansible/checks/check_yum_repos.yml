@@ -1,0 +1,50 @@
+---
+- name: Check YUM repositories
+  hosts: rhcsa_vm
+  gather_facts: false
+
+  tasks:
+    - name: Find .repo files in /etc/yum.repos.d/
+      find:
+        paths: /etc/yum.repos.d/
+        patterns: "*.repo"
+      register: r_repo_files
+      ignore_errors: yes
+
+    - name: Read all .repo file contents
+      command: cat /etc/yum.repos.d/{{ item.path | basename }}
+      loop: "{{ r_repo_files.files | default([]) }}"
+      register: r_repo_contents
+      ignore_errors: yes
+
+    - name: Check yum repolist enabled
+      command: yum repolist enabled
+      register: r_repolist
+      ignore_errors: yes
+
+    - name: Combine all repo file content
+      set_fact:
+        all_repo_text: "{{ r_repo_contents.results | map(attribute='stdout') | join('\n') }}"
+
+    - name: Build check results
+      set_fact:
+        check_results:
+          - name: "At least one .repo file exists"
+            passed: "{{ (r_repo_files.files | default([]) | length) > 0 }}"
+            message: "Found {{ r_repo_files.files | default([]) | length }} .repo file(s)"
+
+          - name: "BaseOS URL present in repo files"
+            passed: "{{ baseos_url in all_repo_text }}"
+            message: "{{ 'Found' if baseos_url in all_repo_text else 'URL not found in any .repo file' }}"
+
+          - name: "AppStream URL present in repo files"
+            passed: "{{ appstream_url in all_repo_text }}"
+            message: "{{ 'Found' if appstream_url in all_repo_text else 'URL not found in any .repo file' }}"
+
+          - name: "yum repolist shows enabled repos"
+            passed: "{{ r_repolist.rc | default(1) == 0 }}"
+            message: "{{ r_repolist.stdout | default('') | truncate(200) }}"
+
+    - name: Print results
+      debug:
+        msg: "ANSIBLE_CHECK_RESULTS={{ check_results | to_json }}"

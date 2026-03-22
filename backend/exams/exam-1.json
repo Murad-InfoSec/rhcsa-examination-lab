@@ -1,0 +1,324 @@
+{
+  "id": "exam-1",
+  "title": "RHCSA Practice Exam 1",
+  "description": "Full RHCSA exam simulation - variant 1",
+  "scenario": "standard+lvm+boot-menu",
+  "tasks": [
+    {
+      "id": 1,
+      "node": "standard",
+      "title": "Network Configuration",
+      "instructions": "Configure the network interface on node1 with the following static settings:\n\n- IP address: 172.25.250.11/24\n- Default gateway: 172.25.250.254\n- DNS server: 172.25.250.254\n- Hostname: node1.lab.example.com\n\nAll settings must persist across reboots.",
+      "checker": "check_network_config",
+      "checker_vars": {
+        "expected_hostname": "node1.lab.example.com",
+        "expected_gateway": "172.25.250.254",
+        "expected_dns": "172.25.250.254"
+      },
+      "deps": {
+        "paths": []
+      }
+    },
+    {
+      "id": 2,
+      "node": "standard",
+      "title": "YUM Repositories",
+      "instructions": "Configure two YUM/DNF repositories on node1:\n\n- Repository name: BaseOS\n  URL: http://content/rhel9.0/x86_64/dvd/BaseOS\n\n- Repository name: AppStream\n  URL: http://content/rhel9.0/x86_64/dvd/AppStream\n\nGPG signature checking must be disabled for both repositories.",
+      "checker": "check_yum_repos",
+      "checker_vars": {
+        "baseos_url": "http://content/rhel9.0/x86_64/dvd/BaseOS",
+        "appstream_url": "http://content/rhel9.0/x86_64/dvd/AppStream"
+      },
+      "deps": {
+        "paths": []
+      }
+    },
+    {
+      "id": 3,
+      "node": "standard",
+      "title": "SELinux Web Port 82",
+      "instructions": "Configure the Apache HTTP server (httpd) to serve content on port 82:\n\n- Install and enable httpd\n- Configure httpd to listen on port 82\n- Add the appropriate SELinux port label for port 82\n- Allow port 82/tcp through the firewall\n\nThe web server must be accessible on port 82 and the configuration must persist across reboots.",
+      "checker": "check_selinux_port",
+      "checker_vars": {
+        "port": "82",
+        "webroot": "/var/www/html"
+      },
+      "deps": {
+        "paths": []
+      }
+    },
+    {
+      "id": 4,
+      "node": "standard",
+      "title": "Users and Groups",
+      "instructions": "Perform the following user and group management tasks:\n\n1. Create a supplementary group named manager\n2. Create user harry with manager as a supplementary group\n3. Create user natasha with manager as a supplementary group\n4. Create user sarah with /sbin/nologin as the login shell\n5. Set the password trootent for users harry, natasha, and sarah\n\nAll users must be able to authenticate with the specified password.",
+      "checker": "check_users_groups",
+      "checker_vars": {
+        "group_name": "manager",
+        "user_harry": "harry",
+        "user_natasha": "natasha",
+        "user_noshell": "sarah",
+        "password_hash_check": "trootent",
+        "secondary_group_users": [
+          "harry",
+          "natasha"
+        ]
+      },
+      "deps": {
+        "paths": []
+      }
+    },
+    {
+      "id": 5,
+      "node": "standard",
+      "title": "Collaborative Directory",
+      "instructions": "Create a collaborative directory /shared/sysadm with the following properties:\n\n- Group ownership: sysadm\n- Permissions: group sysadm has full read/write/execute access; others have no permissions\n- New files created inside must automatically inherit group ownership of sysadm\n\nThe permissions must persist across reboots.",
+      "checker": "check_shared_directory",
+      "checker_vars": {
+        "dir_path": "/shared/sysadm",
+        "group_name": "sysadm"
+      },
+      "deps": {
+        "paths": []
+      }
+    },
+    {
+      "id": 6,
+      "node": "standard",
+      "title": "autofs NFS Automount",
+      "instructions": "Configure autofs to automatically mount the NFS home directory for user remoteuser5:\n\n- NFS server: registry.example.com (172.24.10.150)\n- Exported path: /ruser/remoteuser5\n- Local automount point: /rhome/remoteuser5\n\nThe directory must be mounted on-demand when accessed and the configuration must survive a reboot.",
+      "checker": "check_autofs",
+      "checker_vars": {
+        "nfs_user": "remoteuser5",
+        "nfs_server": "registry.example.com",
+        "nfs_server_ip": "172.24.10.150",
+        "nfs_export": "/ruser/remoteuser5",
+        "mount_base": "/rhome"
+      },
+      "deps": {
+        "paths": []
+      }
+    },
+    {
+      "id": 7,
+      "node": "standard",
+      "title": "Cron Job",
+      "instructions": "Configure a cron job for user natasha:\n\n- Schedule: every day at 14:23\n- Command: echo \"hiyu\"\n\nThe cron job must run under natasha's personal crontab.",
+      "checker": "check_cron_job",
+      "checker_vars": {
+        "cron_user": "natasha",
+        "cron_minute": "23",
+        "cron_hour": "14",
+        "cron_day": "*",
+        "cron_month": "*",
+        "cron_weekday": "*",
+        "cron_command": "echo \"hiyu\""
+      },
+      "deps": {
+        "paths": []
+      }
+    },
+    {
+      "id": 8,
+      "node": "standard",
+      "title": "NTP Client",
+      "instructions": "Configure the system to synchronize time with the following NTP server:\n\n- NTP server: classroom.example.com\n\nThe time synchronization service must be enabled and start automatically at boot.",
+      "checker": "check_ntp",
+      "checker_vars": {
+        "ntp_server": "classroom.example.com"
+      },
+      "deps": {
+        "paths": []
+      }
+    },
+    {
+      "id": 9,
+      "node": "standard",
+      "title": "Find Files by Owner",
+      "instructions": "Find all files owned by user sarah anywhere on the system and save the list to /root/find.user.\n\nThe file must contain one absolute file path per line.",
+      "checker": "check_find_files",
+      "checker_vars": {
+        "owner_user": "sarah",
+        "search_path": "/",
+        "dest_path": "/root/find.user"
+      },
+      "deps": {
+        "paths": []
+      }
+    },
+    {
+      "id": 10,
+      "node": "standard",
+      "title": "Find Strings in File",
+      "instructions": "Search /usr/share/dict/words for lines containing the string strato and save the matching lines to /root/lines.\n\nThe output file must contain only the matching lines in their original order.",
+      "checker": "check_find_strings",
+      "checker_vars": {
+        "search_string": "strato",
+        "source_file": "/usr/share/dict/words",
+        "dest_file": "/root/lines"
+      },
+      "deps": {
+        "paths": []
+      }
+    },
+    {
+      "id": 11,
+      "node": "standard",
+      "title": "User with UID",
+      "instructions": "Create a new user account with the following properties:\n\n- Username: jean\n- UID: 4332\n- Password: radiowits\n\nThe user must be able to authenticate with the specified password.",
+      "checker": "check_user_uid",
+      "checker_vars": {
+        "username": "jean",
+        "uid": "4332",
+        "password": "radiowits"
+      },
+      "deps": {
+        "paths": []
+      }
+    },
+    {
+      "id": 12,
+      "node": "standard",
+      "title": "Tar Archive",
+      "instructions": "Create a gzip-compressed tar archive of the /etc directory:\n\n- Archive location: /root/archive.gz\n- Source directory: /etc\n\nThe archive must be in gzip-compressed tar format.",
+      "checker": "check_archive",
+      "checker_vars": {
+        "archive_path": "/root/archive.gz",
+        "source_dir": "/etc",
+        "expected_compress": "gzip"
+      },
+      "deps": {
+        "paths": []
+      }
+    },
+    {
+      "id": 13,
+      "node": "standard",
+      "title": "Container Systemd Service",
+      "instructions": "As user walhalla, configure a Podman container as a persistent systemd user service:\n\n- Build the container image from the Containerfile located at /home/linus/ascii-to-pdf/\n- Container name: ascii2pdf\n- Mount /opt/files to /opt/files inside the container\n- Mount /opt/processes to /opt/processes inside the container\n- Create a systemd user unit for the container named container-ascii2pdf.service\n- The service must start automatically at boot without requiring an active login session",
+      "checker": "check_container_service",
+      "checker_vars": {
+        "container_user": "walhalla",
+        "container_name": "ascii2pdf",
+        "service_name": "container-ascii2pdf.service",
+        "mount_src_1": "/opt/files",
+        "mount_dst_1": "/opt/files",
+        "mount_src_2": "/opt/processes",
+        "mount_dst_2": "/opt/processes"
+      },
+      "deps": {
+        "paths": [
+          {
+            "host": "podman/ascii-to-pdf",
+            "guest": "/home/linus/ascii-to-pdf"
+          }
+        ]
+      }
+    },
+    {
+      "id": 14,
+      "node": "standard",
+      "title": "Default File Permissions",
+      "instructions": "Configure the default file creation permissions for user daffy:\n\n- New files must be created with permissions: 400 (r--------)\n- New directories must be created with permissions: 550 (r-xr-x---)\n\nThe setting must be applied persistently to daffy's login environment.",
+      "checker": "check_umask",
+      "checker_vars": {
+        "username": "daffy",
+        "expected_file_perm": "400",
+        "expected_dir_perm": "550"
+      },
+      "deps": {
+        "paths": []
+      }
+    },
+    {
+      "id": 15,
+      "node": "boot-menu",
+      "title": "Root Password Reset",
+      "instructions": "Reset the root password on node2 (boot-menu VM) to trootent using the VNC console.\n\nThe root account must be accessible with the new password after a reboot. SELinux must remain in enforcing mode.",
+      "checker": "check_root_password",
+      "checker_vars": {
+        "expected_password": "trootent"
+      },
+      "deps": {
+        "paths": []
+      }
+    },
+    {
+      "id": 16,
+      "node": "lvm",
+      "title": "YUM Repositories NODE2",
+      "instructions": "Configure two YUM/DNF repositories on node2 (lvm VM):\n\n- Repository name: BaseOS\n  URL: http://content/rhel9.0/x86_64/dvd/BaseOS\n\n- Repository name: AppStream\n  URL: http://content/rhel9.0/x86_64/dvd/AppStream\n\nGPG signature checking must be disabled.",
+      "checker": "check_yum_repos",
+      "checker_vars": {
+        "baseos_url": "http://content/rhel9.0/x86_64/dvd/BaseOS",
+        "appstream_url": "http://content/rhel9.0/x86_64/dvd/AppStream"
+      },
+      "deps": {
+        "paths": []
+      }
+    },
+    {
+      "id": 17,
+      "node": "lvm",
+      "title": "Resize Logical Volume",
+      "instructions": "On node2 (lvm VM), resize the logical volume vo so its size is between 225 MiB and 275 MiB.\n\nThe filesystem must remain intact and mounted after resizing.",
+      "checker": "check_lv_resize",
+      "checker_vars": {
+        "lv_name": "vo",
+        "vg_name": "",
+        "size_min_mb": "225",
+        "size_max_mb": "275",
+        "check_mode": "range_mb"
+      },
+      "deps": {
+        "paths": []
+      }
+    },
+    {
+      "id": 18,
+      "node": "lvm",
+      "title": "Swap Partition",
+      "instructions": "On node2 (lvm VM), add swap space with a size between 460 MiB and 560 MiB.\n\nThe swap must activate automatically at boot.",
+      "checker": "check_swap",
+      "checker_vars": {
+        "swap_size_min_mb": "460",
+        "swap_size_max_mb": "560"
+      },
+      "deps": {
+        "paths": []
+      }
+    },
+    {
+      "id": 19,
+      "node": "lvm",
+      "title": "Create Logical Volume",
+      "instructions": "On node2 (lvm VM), perform the following LVM storage tasks:\n\n1. Create a volume group named database using available unallocated disk space\n2. In the database VG, create a logical volume named engineering with 20 extents, formatted as vfat, and mounted persistently at /mnt/database\n3. Create a second volume group named datastore containing a logical volume of exactly 8 MiB\n\nAll mounts must persist across reboots.",
+      "checker": "check_lv_create",
+      "checker_vars": {
+        "lv_name": "engineering",
+        "vg_name": "database",
+        "size_extents": "20",
+        "fs_type": "vfat",
+        "mount_point": "/mnt/database",
+        "vg2_name": "datastore",
+        "lv2_size_mib": "8"
+      },
+      "deps": {
+        "paths": []
+      }
+    },
+    {
+      "id": 20,
+      "node": "standard",
+      "title": "tuned Profile",
+      "instructions": "On node1 (standard VM), set the active tuned performance profile to virtual-guest.\n\nThe profile must persist across reboots.",
+      "checker": "check_tuned",
+      "checker_vars": {
+        "expected_profile": "virtual-guest"
+      },
+      "deps": {
+        "paths": []
+      }
+    }
+  ]
+}
