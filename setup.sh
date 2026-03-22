@@ -54,7 +54,8 @@ command -v python3        &>/dev/null || DNF_PKGS+=(python3 python3-pip)
 { command -v node &>/dev/null && command -v npm &>/dev/null; } \
                                       || DNF_PKGS+=(nodejs npm)
 command -v qemu-img       &>/dev/null || DNF_PKGS+=(qemu-img)
-command -v qemu-system-x86_64 &>/dev/null || DNF_PKGS+=(qemu-kvm)
+{ command -v qemu-system-x86_64 &>/dev/null \
+  || [[ -x /usr/libexec/qemu-kvm ]]; }  || DNF_PKGS+=(qemu-kvm)
 command -v ansible-vault  &>/dev/null || DNF_PKGS+=(ansible-core)
 command -v ssh-keygen     &>/dev/null || DNF_PKGS+=(openssh-clients)
 command -v openssl        &>/dev/null || DNF_PKGS+=(openssl)
@@ -70,6 +71,7 @@ else
 fi
 
 for cmd in virsh virt-customize python3 npm qemu-img ansible-vault ssh-keygen openssl; do
+  # qemu-system-x86_64 is verified separately after the symlink step
   command -v "$cmd" &>/dev/null \
     && ok "$cmd → $(command -v "$cmd")" \
     || fail "$cmd not available after install — check dnf output above"
@@ -77,6 +79,19 @@ done
 [[ -f /usr/share/edk2/ovmf/OVMF_CODE.fd ]] \
   && ok "edk2-ovmf → /usr/share/edk2/ovmf/OVMF_CODE.fd" \
   || fail "OVMF_CODE.fd not found after edk2-ovmf install"
+
+# On RHEL/AlmaLinux qemu-kvm lands in /usr/libexec, not PATH.
+# Packer's qemu plugin requires qemu-system-x86_64 by name — symlink it.
+if ! command -v qemu-system-x86_64 &>/dev/null; then
+  if [[ -x /usr/libexec/qemu-kvm ]]; then
+    sudo ln -sf /usr/libexec/qemu-kvm /usr/local/bin/qemu-system-x86_64
+    ok "qemu-system-x86_64 → /usr/libexec/qemu-kvm (symlink)"
+  else
+    fail "qemu-kvm not found in /usr/libexec — qemu-kvm package missing"
+  fi
+else
+  ok "qemu-system-x86_64 → $(command -v qemu-system-x86_64)"
+fi
 
 # ── 1b: Enable + start libvirtd ───────────────────────────────────────────────
 if ! systemctl is-active --quiet libvirtd 2>/dev/null; then
