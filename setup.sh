@@ -56,6 +56,10 @@ command -v python3        &>/dev/null || DNF_PKGS+=(python3 python3-pip)
 command -v qemu-img       &>/dev/null || DNF_PKGS+=(qemu-img)
 command -v qemu-system-x86_64 &>/dev/null || DNF_PKGS+=(qemu-kvm)
 command -v ansible-vault  &>/dev/null || DNF_PKGS+=(ansible-core)
+command -v ssh-keygen     &>/dev/null || DNF_PKGS+=(openssh-clients)
+command -v openssl        &>/dev/null || DNF_PKGS+=(openssl)
+# UEFI firmware required by Packer + Terraform (OVMF_CODE.fd / OVMF_VARS.fd)
+[[ -f /usr/share/edk2/ovmf/OVMF_CODE.fd ]] || DNF_PKGS+=(edk2-ovmf)
 
 if [[ ${#DNF_PKGS[@]} -gt 0 ]]; then
   echo -e "  Installing system packages: ${DNF_PKGS[*]}"
@@ -65,11 +69,14 @@ else
   ok "System packages already present"
 fi
 
-for cmd in virsh virt-customize python3 npm qemu-img ansible-vault; do
+for cmd in virsh virt-customize python3 npm qemu-img ansible-vault ssh-keygen openssl; do
   command -v "$cmd" &>/dev/null \
     && ok "$cmd → $(command -v "$cmd")" \
     || fail "$cmd not available after install — check dnf output above"
 done
+[[ -f /usr/share/edk2/ovmf/OVMF_CODE.fd ]] \
+  && ok "edk2-ovmf → /usr/share/edk2/ovmf/OVMF_CODE.fd" \
+  || fail "OVMF_CODE.fd not found after edk2-ovmf install"
 
 # ── 1b: Enable + start libvirtd ───────────────────────────────────────────────
 if ! systemctl is-active --quiet libvirtd 2>/dev/null; then
@@ -197,9 +204,9 @@ ok "ansible/vault.yml encrypted with lab_key"
 # ── PHASE 4 — Packer builds (counted even when skipped) ───────────────────────
 cd "$PACKER_DIR"
 
-# Init plugins once — downloads github.com/hashicorp/qemu and any other
-# required plugins declared in the HCL files.
-packer init .
+# Init plugins once using a single file to avoid duplicate required_plugin
+# errors that occur when all three HCL files declare the same qemu plugin.
+packer init standard.pkr.hcl
 ok "Packer plugins initialised"
 
 for scenario in boot-menu lvm standard; do
