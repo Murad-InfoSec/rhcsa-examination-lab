@@ -146,12 +146,25 @@ fi
 # ── PHASE 3 — SSH keys ─────────────────────────────────────────────────────────
 progress "SSH keys"
 
-if [[ -f "$HOME/.ssh/packer_key" && -f "$HOME/.ssh/lab_key" ]]; then
-  ok "Keys already exist: ~/.ssh/packer_key  ~/.ssh/lab_key"
+mkdir -p "$HOME/.ssh"
+chmod 700 "$HOME/.ssh"
+
+if [[ -f "$HOME/.ssh/packer_key" && -f "$HOME/.ssh/packer_key.pub" ]]; then
+  ok "packer_key already exists"
 else
-  bash "$PROJECT_ROOT/generate_ssh_keys.sh"
-  ok "SSH keys generated"
+  ssh-keygen -t ed25519 -C "packer-build" -f "$HOME/.ssh/packer_key" -N ""
+  ok "packer_key generated"
 fi
+
+if [[ -f "$HOME/.ssh/lab_key" && -f "$HOME/.ssh/lab_key.pub" ]]; then
+  ok "lab_key already exists"
+else
+  ssh-keygen -t ed25519 -C "rhcsa-lab" -f "$HOME/.ssh/lab_key" -N ""
+  ok "lab_key generated"
+fi
+
+chmod 600 "$HOME/.ssh/packer_key" "$HOME/.ssh/lab_key"
+chmod 644 "$HOME/.ssh/packer_key.pub" "$HOME/.ssh/lab_key.pub"
 
 # Inject the packer public key into all kickstart files, replacing the placeholder.
 # This runs every time so a regenerated packer_key is always current before builds.
