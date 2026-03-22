@@ -188,10 +188,16 @@ chmod 644 "$HOME/.ssh/packer_key.pub" "$HOME/.ssh/lab_key.pub"
 # Inject the packer public key into all kickstart files, replacing the placeholder.
 # This runs every time so a regenerated packer_key is always current before builds.
 packer_pub="$(cat "$HOME/.ssh/packer_key.pub")"
-sed -i "s|^ssh-ed25519 .* packer-build\$|${packer_pub}|" \
-  "$PACKER_DIR/http/ks-standard.cfg" \
-  "$PACKER_DIR/http/ks-boot-menu.cfg" \
-  "$PACKER_DIR/http/ks-lvm.cfg"
+# Replace any ssh-ed25519 line in the kickstart authorized_keys block.
+# The old pattern matched only lines ending with 'packer-build' which silently
+# failed when the comment was anything else (e.g. 'user@host').
+for ks in "$PACKER_DIR/http/ks-standard.cfg" \
+           "$PACKER_DIR/http/ks-boot-menu.cfg" \
+           "$PACKER_DIR/http/ks-lvm.cfg"; do
+  sed -i "s|^ssh-ed25519 .*|${packer_pub}|" "$ks"
+  grep -q "^${packer_pub}$" "$ks" \
+    || fail "Key injection failed for $(basename "$ks")"
+done
 ok "Packer public key injected into kickstart files"
 
 # ── Ansible Vault password + encrypted secrets ─────────────────────────────────
