@@ -21,9 +21,10 @@ source "qemu" "lvm" {
   cpus   = 2
 
   net_device  = "virtio-net"
-  accelerator = "kvm"
-  cpu_model   = "host"
-  headless    = true
+  accelerator  = "kvm"
+  cpu_model    = "host"
+  headless     = true
+  qemu_binary  = "/usr/bin/qemu-system-x86_64"
 
   machine_type = "q35"
 
