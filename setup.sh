@@ -55,6 +55,7 @@ command -v python3        &>/dev/null || DNF_PKGS+=(python3 python3-pip)
                                       || DNF_PKGS+=(nodejs npm)
 command -v qemu-img       &>/dev/null || DNF_PKGS+=(qemu-img)
 command -v qemu-system-x86_64 &>/dev/null || DNF_PKGS+=(qemu-kvm)
+command -v ansible-vault  &>/dev/null || DNF_PKGS+=(ansible-core)
 
 if [[ ${#DNF_PKGS[@]} -gt 0 ]]; then
   echo -e "  Installing system packages: ${DNF_PKGS[*]}"
@@ -64,7 +65,7 @@ else
   ok "System packages already present"
 fi
 
-for cmd in virsh virt-customize python3 npm qemu-img; do
+for cmd in virsh virt-customize python3 npm qemu-img ansible-vault; do
   command -v "$cmd" &>/dev/null \
     && ok "$cmd → $(command -v "$cmd")" \
     || fail "$cmd not available after install — check dnf output above"
@@ -102,19 +103,15 @@ fi
 ok "terraform → $(command -v terraform)"
 ok "packer    → $(command -v packer)"
 
-# ── 1d: ansible + websockify via pip3 ─────────────────────────────────────────
-# ansible-vault is called in PHASE 3 (before the venv in PHASE 5 exists),
-# so both packages must be available system-wide (--user) now.
-for entry in "ansible-vault:ansible" "websockify:websockify"; do
-  cmd="${entry%%:*}"; pkg="${entry##*:}"
-  if command -v "$cmd" &>/dev/null; then
-    ok "$cmd → $(command -v "$cmd")"
-  else
-    pip3 install --user --quiet "$pkg" \
-      && { hash -r 2>/dev/null || true; ok "$cmd installed (pip3 --user)"; } \
-      || warn "$cmd pip3 install failed — will retry inside venv (PHASE 5)"
-  fi
-done
+# ── 1d: websockify via pip3 ───────────────────────────────────────────────────
+# ansible-core is installed via dnf above; websockify is pip-only.
+if ! command -v websockify &>/dev/null; then
+  pip3 install --user --quiet websockify \
+    && { hash -r 2>/dev/null || true; ok "websockify installed (pip3 --user)"; } \
+    || warn "websockify pip3 install failed — will retry inside venv (PHASE 5)"
+else
+  ok "websockify → $(command -v websockify)"
+fi
 
 # ── PHASE 2 — Permissions ──────────────────────────────────────────────────────
 progress "Fixing permissions"
