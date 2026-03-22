@@ -42,45 +42,79 @@ warn() { echo -e "  ${YELLOW}⚠${NC}  $*"; }
 fail() { echo -e "\n${RED}${BOLD}✘ FAILED:${NC} $*" >&2; exit 1; }
 
 # ── PHASE 1 — Prerequisites ────────────────────────────────────────────────────
-progress "Checking prerequisites"
+progress "Installing prerequisites"
 
-pip_install() {
-  local pkg="$1"
-  if [[ -x "$VENV/bin/pip" ]]; then "$VENV/bin/pip" install --quiet "$pkg"
-  elif command -v pip3 &>/dev/null; then pip3 install --user --quiet "$pkg"
-  elif command -v python3 &>/dev/null; then python3 -m pip install --user --quiet "$pkg"
-  else return 1; fi
-}
+# ── 1a: System packages via dnf ───────────────────────────────────────────────
+DNF_PKGS=()
+command -v virsh          &>/dev/null || DNF_PKGS+=(libvirt virt-install
+                                                    libvirt-daemon-config-network
+                                                    libvirt-daemon-kvm)
+command -v virt-customize &>/dev/null || DNF_PKGS+=(libguestfs-tools)
+command -v python3        &>/dev/null || DNF_PKGS+=(python3 python3-pip)
+{ command -v node &>/dev/null && command -v npm &>/dev/null; } \
+                                      || DNF_PKGS+=(nodejs npm)
+command -v qemu-img       &>/dev/null || DNF_PKGS+=(qemu-img)
+command -v qemu-system-x86_64 &>/dev/null || DNF_PKGS+=(qemu-kvm)
 
-CANT_INSTALL=()
-for cmd in virsh terraform packer python3 npm virt-customize; do
-  if command -v "$cmd" &>/dev/null; then ok "$cmd → $(command -v "$cmd")"
-  else warn "$cmd NOT found"; CANT_INSTALL+=("$cmd"); fi
+if [[ ${#DNF_PKGS[@]} -gt 0 ]]; then
+  echo -e "  Installing system packages: ${DNF_PKGS[*]}"
+  sudo dnf install -y "${DNF_PKGS[@]}"
+  ok "System packages installed"
+else
+  ok "System packages already present"
+fi
+
+for cmd in virsh virt-customize python3 npm qemu-img; do
+  command -v "$cmd" &>/dev/null \
+    && ok "$cmd → $(command -v "$cmd")" \
+    || fail "$cmd not available after install — check dnf output above"
 done
 
-for entry in "ansible:ansible" "websockify:websockify"; do
-  cmd="${entry%%:*}"; pkg="${entry##*:}"
-  if command -v "$cmd" &>/dev/null; then ok "$cmd → $(command -v "$cmd")"
+# ── 1b: Enable + start libvirtd ───────────────────────────────────────────────
+if ! systemctl is-active --quiet libvirtd 2>/dev/null; then
+  sudo systemctl enable --now libvirtd
+  ok "libvirtd enabled and started"
+else
+  ok "libvirtd running"
+fi
+
+# ── 1c: Terraform + Packer (HashiCorp DNF repo) ───────────────────────────────
+if ! command -v terraform &>/dev/null || ! command -v packer &>/dev/null; then
+  if ! dnf repolist 2>/dev/null | grep -qi hashicorp; then
+    # dnf5-plugins on AlmaLinux/RHEL 10; dnf-plugins-core on older releases
+    if rpm -q dnf5-plugins &>/dev/null || dnf list installed dnf5-plugins &>/dev/null 2>&1; then
+      sudo dnf install -y dnf5-plugins
+    else
+      sudo dnf install -y dnf-plugins-core
+    fi
+    sudo dnf config-manager addrepo \
+      --from-repofile=https://rpm.releases.hashicorp.com/RHEL/hashicorp.repo \
+      2>/dev/null \
+      || sudo dnf config-manager --add-repo \
+           https://rpm.releases.hashicorp.com/RHEL/hashicorp.repo
+    ok "HashiCorp repo added"
   else
-    warn "$cmd not found — auto-installing..."
-    if pip_install "$pkg"; then
-      hash -r 2>/dev/null || true
-      if command -v "$cmd" &>/dev/null; then ok "$cmd installed"
-      else warn "$cmd installed but not yet in PATH — venv will cover it"; fi
-    else warn "Auto-install failed for $cmd"; CANT_INSTALL+=("$cmd"); fi
+    ok "HashiCorp repo already present"
+  fi
+  command -v terraform &>/dev/null || sudo dnf install -y terraform
+  command -v packer    &>/dev/null || sudo dnf install -y packer
+fi
+ok "terraform → $(command -v terraform)"
+ok "packer    → $(command -v packer)"
+
+# ── 1d: ansible + websockify via pip3 ─────────────────────────────────────────
+# ansible-vault is called in PHASE 3 (before the venv in PHASE 5 exists),
+# so both packages must be available system-wide (--user) now.
+for entry in "ansible-vault:ansible" "websockify:websockify"; do
+  cmd="${entry%%:*}"; pkg="${entry##*:}"
+  if command -v "$cmd" &>/dev/null; then
+    ok "$cmd → $(command -v "$cmd")"
+  else
+    pip3 install --user --quiet "$pkg" \
+      && { hash -r 2>/dev/null || true; ok "$cmd installed (pip3 --user)"; } \
+      || warn "$cmd pip3 install failed — will retry inside venv (PHASE 5)"
   fi
 done
-
-if [[ ${#CANT_INSTALL[@]} -gt 0 ]]; then
-  echo -e "\n${RED}${BOLD}Cannot auto-install: ${CANT_INSTALL[*]}${NC}\nInstall manually then re-run:\n"
-  [[ " ${CANT_INSTALL[*]} " =~ " virsh "          ]] && echo "  virsh:          sudo dnf install libvirt virt-install"
-  [[ " ${CANT_INSTALL[*]} " =~ " virt-customize " ]] && echo "  virt-customize: sudo dnf install libguestfs-tools"
-  [[ " ${CANT_INSTALL[*]} " =~ " terraform "  ]] && echo "  terraform:  https://developer.hashicorp.com/terraform/downloads"
-  [[ " ${CANT_INSTALL[*]} " =~ " packer "     ]] && echo "  packer:     https://developer.hashicorp.com/packer/downloads"
-  [[ " ${CANT_INSTALL[*]} " =~ " python3 "    ]] && echo "  python3:    sudo dnf install python3"
-  [[ " ${CANT_INSTALL[*]} " =~ " npm "        ]] && echo "  npm:        sudo dnf install nodejs npm"
-  fail "Resolve missing tools then re-run setup.sh"
-fi
 
 # ── PHASE 2 — Permissions ──────────────────────────────────────────────────────
 progress "Fixing permissions"
