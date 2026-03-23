@@ -280,8 +280,12 @@ cd "$TERRAFORM_DIR"
 if [[ ! -d ".terraform" ]]; then terraform init; fi
 ok "Terraform ready"
 
-if ! virsh net-info vm-network &>/dev/null; then
-  virsh net-define /dev/stdin <<'NETXML'
+if virsh net-info vm-network &>/dev/null; then
+  virsh net-destroy vm-network 2>/dev/null || true
+  virsh net-undefine vm-network 2>/dev/null || true
+  ok "vm-network removed (will recreate)"
+fi
+virsh net-define /dev/stdin <<'NETXML'
 <network>
   <name>vm-network</name>
   <forward mode="nat"/>
@@ -289,12 +293,9 @@ if ! virsh net-info vm-network &>/dev/null; then
   <ip address="192.168.100.1" prefix="24"/>
 </network>
 NETXML
-  virsh net-start vm-network
-  virsh net-autostart vm-network
-  ok "vm-network created"
-else
-  ok "vm-network already exists"
-fi
+virsh net-start vm-network
+virsh net-autostart vm-network
+ok "vm-network created"
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 wait_for_ssh() {

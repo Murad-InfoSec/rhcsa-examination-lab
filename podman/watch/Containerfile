@@ -1,6 +1,0 @@
-FROM ubi9/ubi-minimal
-
-LABEL maintainer="watch"
-LABEL description="Monitors files and processes in mounted volumes"
-
-CMD ["/bin/sh", "-c", "while true; do echo '=== Files ==="; ls /opt/files 2>/dev/null || true; echo '=== Processes ==="; ls /opt/processes 2>/dev/null || true; sleep 10; done"]
