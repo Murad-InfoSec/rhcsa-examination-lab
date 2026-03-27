@@ -231,10 +231,8 @@ fi
   echo "vault_ssh_private_key: |"
   sed 's/^/  /' "$HOME/.ssh/lab_key"
 } > "$BACKEND_DIR/ansible/vault.yml"
-"$VENV/bin/ansible-vault" encrypt "$BACKEND_DIR/ansible/vault.yml" \
-  --vault-password-file "$HOME/.ansible/vault_pass" 2>/dev/null \
-  || ansible-vault encrypt "$BACKEND_DIR/ansible/vault.yml" \
-       --vault-password-file "$HOME/.ansible/vault_pass"
+ansible-vault encrypt "$BACKEND_DIR/ansible/vault.yml" \
+  --vault-password-file "$HOME/.ansible/vault_pass"
 ok "ansible/vault.yml encrypted with lab_key"
 
 # ── PHASE 4 — Packer builds (counted even when skipped) ───────────────────────
