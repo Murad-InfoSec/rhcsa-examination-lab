@@ -101,7 +101,22 @@ else
   ok "libvirtd running"
 fi
 
-# ── 1c: Terraform + Packer (HashiCorp DNF repo) ───────────────────────────────
+# ── 1c: Ensure libvirt 'default' storage pool exists and is active ───────────
+if ! virsh pool-info default &>/dev/null; then
+  virsh pool-define-as default dir --target /var/lib/libvirt/images
+  virsh pool-build default
+  virsh pool-start default
+  virsh pool-autostart default
+  ok "libvirt 'default' storage pool created and started"
+elif ! virsh pool-info default | grep -q "^State:.*running"; then
+  virsh pool-start default
+  virsh pool-autostart default
+  ok "libvirt 'default' storage pool started"
+else
+  ok "libvirt 'default' storage pool running"
+fi
+
+# ── 1d: Terraform + Packer (HashiCorp DNF repo) ───────────────────────────────
 if ! command -v terraform &>/dev/null || ! command -v packer &>/dev/null; then
   if ! dnf repolist 2>/dev/null | grep -qi hashicorp; then
     # dnf5-plugins on AlmaLinux/RHEL 10; dnf-plugins-core on older releases
