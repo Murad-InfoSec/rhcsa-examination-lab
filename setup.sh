@@ -263,8 +263,8 @@ if [[ ! -f "$VENV/bin/activate" ]] || ! "$VENV/bin/python3" -c '' &>/dev/null 2>
 else
   ok "Virtualenv exists"
 fi
-"$VENV/bin/pip" install --quiet --upgrade pip
-"$VENV/bin/pip" install --quiet -r "$BACKEND_DIR/requirements.txt"
+"$VENV/bin/python3" -m pip install --quiet --upgrade pip
+"$VENV/bin/python3" -m pip install --quiet -r "$BACKEND_DIR/requirements.txt"
 ok "Python dependencies installed"
 
 # ── PHASE 6 — Frontend build ───────────────────────────────────────────────────
