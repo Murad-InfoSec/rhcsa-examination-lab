@@ -24,7 +24,7 @@ source "qemu" "standard" {
   accelerator  = "kvm"
   cpu_model    = "host"
   headless     = true
-  qemu_binary  = "/usr/bin/qemu-system-x86_64"
+  qemu_binary  = "/usr/local/bin/qemu-system-x86_64"
 
   machine_type = "q35"
 
