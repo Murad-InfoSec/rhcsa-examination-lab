@@ -256,7 +256,10 @@ cd "$PROJECT_ROOT"
 # ── PHASE 5 — Python venv ──────────────────────────────────────────────────────
 progress "Python virtualenv + dependencies"
 
-if [[ ! -f "$VENV/bin/activate" ]] || ! "$VENV/bin/python3" -c '' &>/dev/null 2>&1; then
+if [[ ! -f "$VENV/bin/activate" ]] \
+    || ! "$VENV/bin/python3" -c '' &>/dev/null 2>&1 \
+    || [[ "$(awk -F' *= *' '/^version/{print $2}' "$VENV/pyvenv.cfg" 2>/dev/null | cut -d. -f1,2)" \
+         != "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')" ]]; then
   [[ -d "$VENV" ]] && rm -rf "$VENV"
   python3 -m venv "$VENV"
   ok "Virtualenv created: $VENV"
