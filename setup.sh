@@ -15,6 +15,10 @@ FRONTEND_DIR="$PROJECT_ROOT/frontend"
 VENV="$BACKEND_DIR/rhcsa-lab"
 SAVE_DIR="$BACKEND_DIR/vm_saves"
 
+# Capture system ansible-vault before venv/bin is prepended to PATH.
+# On rerun the venv copy may have a stale Python shebang (e.g. after a Python upgrade).
+_SYS_ANSIBLE_VAULT=$(command -v ansible-vault 2>/dev/null || true)
+
 export PATH="$HOME/.local/bin:$VENV/bin:$PATH"
 
 # ── Progress tracking ──────────────────────────────────────────────────────────
@@ -225,7 +229,7 @@ fi
   echo "vault_ssh_private_key: |"
   sed 's/^/  /' "$HOME/.ssh/lab_key"
 } > "$BACKEND_DIR/ansible/vault.yml"
-ansible-vault encrypt "$BACKEND_DIR/ansible/vault.yml" \
+${_SYS_ANSIBLE_VAULT:-ansible-vault} encrypt "$BACKEND_DIR/ansible/vault.yml" \
   --vault-password-file "$HOME/.ansible/vault_pass"
 ok "ansible/vault.yml encrypted with lab_key"
 
@@ -252,7 +256,8 @@ cd "$PROJECT_ROOT"
 # ── PHASE 5 — Python venv ──────────────────────────────────────────────────────
 progress "Python virtualenv + dependencies"
 
-if [[ ! -f "$VENV/bin/activate" ]]; then
+if [[ ! -f "$VENV/bin/activate" ]] || ! "$VENV/bin/python3" -c '' &>/dev/null 2>&1; then
+  [[ -d "$VENV" ]] && rm -rf "$VENV"
   python3 -m venv "$VENV"
   ok "Virtualenv created: $VENV"
 else
