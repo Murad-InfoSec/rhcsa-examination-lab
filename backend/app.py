@@ -163,7 +163,7 @@ def _inject_task_deps(task: dict, cfg: dict) -> tuple[bool, str]:
 
 
 def ensure_vm() -> tuple[bool, str]:
-    """Wait up to 120 s for the VM to be reachable over SSH (polls every 2 s).
+    """Wait up to 120 s for the VM to be reachable over SSH (polls every 0.5 s).
     For boot-menu VMs (VNC-only), checks virsh state instead of SSH."""
     cfg = get_active_vm_config()
     if cfg["scenario"] == "boot-menu":
@@ -172,10 +172,10 @@ def ensure_vm() -> tuple[bool, str]:
     last_err = "timeout waiting for VM"
     while time.time() < deadline:
         try:
-            with socket.create_connection((cfg["ip"], 22), timeout=3):
+            with socket.create_connection((cfg["ip"], 22), timeout=1):
                 pass
         except OSError:
-            time.sleep(2)
+            time.sleep(0.5)
             continue
         try:
             ssh = _ssh_connect(cfg)
@@ -183,7 +183,7 @@ def ensure_vm() -> tuple[bool, str]:
             return True, ""
         except Exception as e:
             last_err = str(e)
-            time.sleep(2)
+            time.sleep(0.5)
     return False, last_err
 
 
@@ -238,7 +238,6 @@ def _recreate_overlay(scenario: str, hostname: str) -> None:
     """Drop and recreate the qcow2 overlay, giving the VM a clean disk slate."""
     snap_vol = f"{hostname}-snap.qcow2"
     back_vol = f"{scenario}-disk.qcow2"
-    subprocess.run(["virsh", "pool-refresh", "default"], capture_output=True, timeout=10)
     del_result = subprocess.run(
         ["virsh", "vol-delete", snap_vol, "--pool", "default"],
         capture_output=True, text=True, timeout=10,
@@ -279,7 +278,6 @@ def _reset_vm_for(scenario: str, hostname: str) -> tuple[bool, str]:
         save = _save_path(hostname)
         try:
             subprocess.run(["virsh", "destroy", hostname], capture_output=True, timeout=10)
-            _wait_for_shutdown(hostname)
             _recreate_overlay(scenario, hostname)
             if os.path.exists(save):
                 result = subprocess.run(["virsh", "restore", save],
@@ -335,9 +333,8 @@ def save_checkpoint(hostname: str = None) -> tuple[bool, str]:
 
 
 def _shutdown_vm(hostname: str) -> None:
-    """Destroy a running VM domain and wait for shut-off, ignoring errors (e.g. already stopped)."""
+    """Destroy a running VM domain, ignoring errors (e.g. already stopped)."""
     subprocess.run(["virsh", "destroy", hostname], capture_output=True, timeout=10)
-    _wait_for_shutdown(hostname)
 
 
 def _vm_is_running(hostname: str) -> bool:
@@ -569,9 +566,20 @@ def task_reset(task_id):
     if cfg["scenario"] == "boot-menu":
         start_vnc_proxy()
     else:
-        ok, err = ensure_vm()
-        if not ok:
-            return jsonify({"ok": False, "error": f"VM reset ok but SSH not ready: {err}"}), 500
+        # After virsh restore the VM resumes instantly — use a short 10s timeout
+        # rather than the full 120s ensure_vm() to confirm SSH is up without
+        # adding noticeable latency on the normal (checkpoint) path.
+        deadline = time.time() + 10
+        ssh_ready = False
+        while time.time() < deadline:
+            try:
+                with socket.create_connection((cfg["ip"], 22), timeout=2):
+                    ssh_ready = True
+                    break
+            except OSError:
+                time.sleep(0.5)
+        if not ssh_ready:
+            return jsonify({"ok": False, "error": "VM reset ok but SSH port not ready within 10s"}), 500
     _task_state[task_id]["status"] = "running"
     return jsonify({"ok": True, "status": "running"})
 

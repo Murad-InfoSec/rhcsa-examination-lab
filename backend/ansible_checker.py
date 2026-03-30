@@ -5,6 +5,7 @@ Runs per-task ansible-playbook checks and parses structured results.
 import json
 import os
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -39,10 +40,11 @@ def _now() -> str:
 # ---------------------------------------------------------------------------
 PLAYBOOK_DIR = os.path.join(os.path.dirname(__file__), "ansible", "checks")
 
-# Resolve ansible-playbook from the venv bundled alongside the backend,
-# falling back to PATH if not found there.
-_BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
-_VENV_ANSIBLE = os.path.join(_BACKEND_DIR, "rhcsa-lab", "bin", "ansible-playbook")
+# Resolve ansible-playbook from the same Python environment running this app.
+# Using sys.executable's bin/ directory avoids shebang path issues when the
+# venv was created on a different machine or by a different user.
+_PYTHON_BIN = os.path.dirname(os.path.abspath(sys.executable))
+_VENV_ANSIBLE = os.path.join(_PYTHON_BIN, "ansible-playbook")
 ANSIBLE_PLAYBOOK = _VENV_ANSIBLE if os.path.isfile(_VENV_ANSIBLE) else "ansible-playbook"
 
 def run_ansible_check(
