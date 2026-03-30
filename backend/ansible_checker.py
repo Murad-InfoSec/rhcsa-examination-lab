@@ -40,12 +40,22 @@ def _now() -> str:
 # ---------------------------------------------------------------------------
 PLAYBOOK_DIR = os.path.join(os.path.dirname(__file__), "ansible", "checks")
 
-# Resolve ansible-playbook from the same Python environment running this app.
-# Using sys.executable's bin/ directory avoids shebang path issues when the
-# venv was created on a different machine or by a different user.
+# Locate ansible-playbook in the same bin/ as the running Python interpreter.
+# We invoke it as [sys.executable, script_path] to bypass the shebang entirely —
+# this avoids [Errno 2] failures when the shebang path is stale (different
+# machine, different username, or Python version change).
 _PYTHON_BIN = os.path.dirname(os.path.abspath(sys.executable))
 _VENV_ANSIBLE = os.path.join(_PYTHON_BIN, "ansible-playbook")
-ANSIBLE_PLAYBOOK = _VENV_ANSIBLE if os.path.isfile(_VENV_ANSIBLE) else "ansible-playbook"
+
+
+def _build_ansible_cmd(extra_args: list) -> list:
+    """Return the command list for ansible-playbook, bypassing the shebang."""
+    if os.path.isfile(_VENV_ANSIBLE):
+        # Run via the current interpreter — shebang is irrelevant.
+        return [sys.executable, _VENV_ANSIBLE] + extra_args
+    # Fallback: hope ansible-playbook is on PATH.
+    return ["ansible-playbook"] + extra_args
+
 
 def run_ansible_check(
     checker_name: str,
@@ -68,12 +78,11 @@ def run_ansible_check(
         tmp.close()
 
         # 2. Build command
-        cmd = [
-            ANSIBLE_PLAYBOOK,
+        cmd = _build_ansible_cmd([
             "-i", tmp.name,
             "--extra-vars", json.dumps(checker_vars),
             playbook_path,
-        ]
+        ])
 
         # 3. Run
         result = subprocess.run(
