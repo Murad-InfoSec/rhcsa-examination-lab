@@ -85,16 +85,20 @@ done
   || fail "OVMF_CODE.fd not found after edk2-ovmf install"
 
 # On RHEL/AlmaLinux qemu-kvm lands in /usr/libexec, not PATH.
-# Packer's qemu plugin requires qemu-system-x86_64 by name — symlink it.
-if ! command -v qemu-system-x86_64 &>/dev/null; then
+# Packer's qemu plugin requires qemu-system-x86_64 at /usr/local/bin specifically.
+if [[ ! -x /usr/local/bin/qemu-system-x86_64 ]]; then
+  qemu_bin=""
   if [[ -x /usr/libexec/qemu-kvm ]]; then
-    sudo ln -sf /usr/libexec/qemu-kvm /usr/local/bin/qemu-system-x86_64
-    ok "qemu-system-x86_64 → /usr/libexec/qemu-kvm (symlink)"
+    qemu_bin=/usr/libexec/qemu-kvm
+  elif command -v qemu-system-x86_64 &>/dev/null; then
+    qemu_bin=$(command -v qemu-system-x86_64)
   else
-    fail "qemu-kvm not found in /usr/libexec — qemu-kvm package missing"
+    fail "qemu-kvm not found — qemu-kvm package missing"
   fi
+  sudo ln -sf "$qemu_bin" /usr/local/bin/qemu-system-x86_64
+  ok "qemu-system-x86_64 → $qemu_bin (symlink at /usr/local/bin)"
 else
-  ok "qemu-system-x86_64 → $(command -v qemu-system-x86_64)"
+  ok "qemu-system-x86_64 → /usr/local/bin/qemu-system-x86_64"
 fi
 
 # ── 1b: Enable + start libvirtd ───────────────────────────────────────────────
@@ -212,6 +216,40 @@ for ks in "$PACKER_DIR/http/ks-standard.cfg" \
     || fail "Key injection failed for $(basename "$ks")"
 done
 ok "Packer public key injected into kickstart files"
+
+# Write SSH config entries for all lab VMs so plain `ssh linus@<ip>` works.
+# The block is replaced wholesale each run so it stays current.
+SSH_CONFIG="$HOME/.ssh/config"
+touch "$SSH_CONFIG"
+chmod 600 "$SSH_CONFIG"
+
+# Strip the old managed block (if any), then append the current one.
+sed -i '/# BEGIN rhcsa-lab/,/# END rhcsa-lab/d' "$SSH_CONFIG"
+cat >> "$SSH_CONFIG" << EOF
+# BEGIN rhcsa-lab
+Host 192.168.100.10
+  HostName 192.168.100.10
+  User linus
+  IdentityFile ~/.ssh/lab_key
+  StrictHostKeyChecking no
+  UserKnownHostsFile /dev/null
+
+Host 192.168.100.11
+  HostName 192.168.100.11
+  User linus
+  IdentityFile ~/.ssh/lab_key
+  StrictHostKeyChecking no
+  UserKnownHostsFile /dev/null
+
+Host 192.168.100.12
+  HostName 192.168.100.12
+  User linus
+  IdentityFile ~/.ssh/lab_key
+  StrictHostKeyChecking no
+  UserKnownHostsFile /dev/null
+# END rhcsa-lab
+EOF
+ok "SSH config written for lab VMs (192.168.100.10-12)"
 
 # ── Ansible Vault password + encrypted secrets ─────────────────────────────────
 mkdir -p "$HOME/.ansible"
@@ -443,36 +481,30 @@ done
 
 cd "$PROJECT_ROOT"
 
-# ── PHASE 8 — Done ─────────────────────────────────────────────────────────────
-progress "Setup complete — all 3 VMs ready"
+# ── PHASE 8 — Shutdown all VMs ─────────────────────────────────────────────────
+progress "Shutting down all VMs"
+
+for scenario in boot-menu lvm standard; do
+  hostname="${VM_HOSTNAME[$scenario]}"
+  if virsh domstate "$hostname" 2>/dev/null | grep -q "running"; then
+    virsh destroy "$hostname" 2>/dev/null || true
+    ok "$hostname stopped"
+  else
+    ok "$hostname already stopped"
+  fi
+done
+
+# ── PHASE 9 — Done ─────────────────────────────────────────────────────────────
+progress "Setup complete"
 
 echo -e "\n${GREEN}${BOLD}"
 echo "╔══════════════════════════════════════════════╗"
 echo "║       All VMs created and checkpointed       ║"
 echo "╠══════════════════════════════════════════════╣"
-echo "║  boot-menu-001  →  stopped (checkpoint ready)  ║"
-echo "║  lvm-001        →  stopped (checkpoint ready)  ║"
-echo "║  standard-001   →  stopped (app.py will start) ║"
+echo "║  boot-menu-001  →  stopped (checkpoint ready) ║"
+echo "║  lvm-001        →  stopped (checkpoint ready) ║"
+echo "║  standard-001   →  stopped (checkpoint ready) ║"
+echo "╠══════════════════════════════════════════════╣"
+echo "║  Run ./run.sh to start the platform           ║"
 echo "╚══════════════════════════════════════════════╝"
 echo -e "${NC}"
-
-# ── PHASE 9 — Start platform ───────────────────────────────────────────────────
-echo -e "${YELLOW}"
-read -rp "Which exam? [exam-1/exam-2] (default: exam-1): " EXAM_CHOICE || true
-EXAM="${EXAM_CHOICE:-exam-1}"
-echo -e "${NC}"
-
-echo -e "${CYAN}"
-echo "╔══════════════════════════════════════╗"
-echo "║   RHCSA Examination Platform Ready   ║"
-echo "╠══════════════════════════════════════╣"
-printf "║  Exam : %-29s║\n" "$EXAM"
-printf "║  URL  : %-29s║\n" "http://localhost:5000"
-echo "╚══════════════════════════════════════╝"
-echo -e "${NC}"
-
-PROJECT_ROOT="$PROJECT_ROOT" \
-ACTIVE_SCENARIO=standard \
-ACTIVE_EXAM="$EXAM" \
-SSH_KEY_PATH="$HOME/.ssh/lab_key" \
-"$VENV/bin/python" "$BACKEND_DIR/app.py"

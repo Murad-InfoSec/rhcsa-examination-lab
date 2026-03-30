@@ -9,7 +9,6 @@ import sys
 import subprocess
 import threading
 import time
-from copy import deepcopy
 
 import logging
 import socket
@@ -70,7 +69,7 @@ _reset_version_lock = threading.Lock()
 _connected_sids: set[str] = set()
 _connected_lock = threading.Lock()
 _idle_shutdown_timer: threading.Timer | None = None
-_IDLE_SHUTDOWN_DELAY = 15  # seconds after last client disconnects
+_IDLE_SHUTDOWN_DELAY = 60  # seconds after last client disconnects
 
 
 # ---------------------------------------------------------------------------
@@ -166,7 +165,6 @@ def _inject_task_deps(task: dict, cfg: dict) -> tuple[bool, str]:
 def ensure_vm() -> tuple[bool, str]:
     """Wait up to 120 s for the VM to be reachable over SSH (polls every 2 s).
     For boot-menu VMs (VNC-only), checks virsh state instead of SSH."""
-    import time
     cfg = get_active_vm_config()
     if cfg["scenario"] == "boot-menu":
         return (_vm_is_running(cfg["hostname"]), "") if _vm_is_running(cfg["hostname"]) else (False, "boot-menu VM is not running")
@@ -190,12 +188,34 @@ def ensure_vm() -> tuple[bool, str]:
 
 
 def stop_vm() -> tuple[bool, str]:
-    """No-op for a real VM — stopping is handled by Terraform/virsh outside the app."""
+    """Destroy the active running VM and wait for it to reach shut-off state."""
+    cfg = get_active_vm_config()
+    hostname = cfg["hostname"]
+    if not _vm_is_running(hostname):
+        return True, ""
+    result = subprocess.run(["virsh", "destroy", hostname], capture_output=True, text=True, timeout=10)
+    if result.returncode != 0:
+        return False, result.stderr.strip()
+    if not _wait_for_shutdown(hostname):
+        return False, f"VM {hostname} did not reach shut-off state within 10s"
     return True, ""
 
 
 def _save_path(hostname: str) -> str:
     return os.path.join(SAVE_DIR, f"{hostname}.save")
+
+
+def _wait_for_shutdown(hostname: str, timeout: int = 10) -> bool:
+    """Poll until the domain reaches shut-off state. Returns True if successful."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        result = subprocess.run(
+            ["virsh", "domstate", hostname], capture_output=True, text=True, timeout=5
+        )
+        if result.stdout.strip() == "shut off":
+            return True
+        time.sleep(0.5)
+    return False
 
 
 def _get_vol_capacity(vol_name: str) -> str:
@@ -219,8 +239,12 @@ def _recreate_overlay(scenario: str, hostname: str) -> None:
     snap_vol = f"{hostname}-snap.qcow2"
     back_vol = f"{scenario}-disk.qcow2"
     subprocess.run(["virsh", "pool-refresh", "default"], capture_output=True, timeout=10)
-    subprocess.run(["virsh", "vol-delete", snap_vol, "--pool", "default"],
-                   capture_output=True, timeout=10)
+    del_result = subprocess.run(
+        ["virsh", "vol-delete", snap_vol, "--pool", "default"],
+        capture_output=True, text=True, timeout=10,
+    )
+    if del_result.returncode != 0 and "not found" not in del_result.stderr.lower():
+        raise RuntimeError(f"vol-delete {snap_vol} failed: {del_result.stderr.strip()}")
     capacity = _get_vol_capacity(back_vol)
     subprocess.run(
         ["virsh", "vol-create-as", "default", snap_vol, capacity,
@@ -255,6 +279,7 @@ def _reset_vm_for(scenario: str, hostname: str) -> tuple[bool, str]:
         save = _save_path(hostname)
         try:
             subprocess.run(["virsh", "destroy", hostname], capture_output=True, timeout=10)
+            _wait_for_shutdown(hostname)
             _recreate_overlay(scenario, hostname)
             if os.path.exists(save):
                 result = subprocess.run(["virsh", "restore", save],
@@ -294,7 +319,12 @@ def save_checkpoint(hostname: str = None) -> tuple[bool, str]:
         if result.returncode != 0:
             return False, result.stderr.strip()
         if scenario:
-            _recreate_overlay(scenario, hostname)
+            try:
+                _recreate_overlay(scenario, hostname)
+            except Exception as e:
+                # VM is paused on disk; recover by resuming the original state.
+                subprocess.run(["virsh", "restore", save], capture_output=True, timeout=30)
+                return False, f"overlay recreation failed (VM resumed): {e}"
         result = subprocess.run(["virsh", "restore", save],
                                 capture_output=True, text=True, timeout=30)
         if result.returncode != 0:
@@ -305,8 +335,9 @@ def save_checkpoint(hostname: str = None) -> tuple[bool, str]:
 
 
 def _shutdown_vm(hostname: str) -> None:
-    """Destroy a running VM domain, ignoring errors (e.g. already stopped)."""
+    """Destroy a running VM domain and wait for shut-off, ignoring errors (e.g. already stopped)."""
     subprocess.run(["virsh", "destroy", hostname], capture_output=True, timeout=10)
+    _wait_for_shutdown(hostname)
 
 
 def _vm_is_running(hostname: str) -> bool:
@@ -314,7 +345,7 @@ def _vm_is_running(hostname: str) -> bool:
     result = subprocess.run(
         ["virsh", "domstate", hostname], capture_output=True, text=True, timeout=5
     )
-    return "running" in result.stdout
+    return result.stdout.strip() == "running"
 
 
 def _start_vm(hostname: str, scenario: str) -> tuple[bool, str]:
@@ -537,6 +568,10 @@ def task_reset(task_id):
     cfg = get_active_vm_config()
     if cfg["scenario"] == "boot-menu":
         start_vnc_proxy()
+    else:
+        ok, err = ensure_vm()
+        if not ok:
+            return jsonify({"ok": False, "error": f"VM reset ok but SSH not ready: {err}"}), 500
     _task_state[task_id]["status"] = "running"
     return jsonify({"ok": True, "status": "running"})
 
@@ -854,7 +889,6 @@ def _startup_vm_worker():
     does a cold virsh start.  Runs in a background thread so it does not block
     the Flask/SocketIO server from accepting connections.
     """
-    import time
     from vm_config import DEFAULT_SCENARIO, SCENARIOS
 
     scenario = os.environ.get("ACTIVE_SCENARIO", DEFAULT_SCENARIO)
@@ -872,7 +906,7 @@ def _startup_vm_worker():
     state = subprocess.run(
         ["virsh", "domstate", hostname], capture_output=True, text=True, timeout=5
     )
-    if "running" in state.stdout:
+    if state.stdout.strip() == "running":
         print(f"[startup] {hostname} is already running", flush=True)
     else:
         print(f"[startup] {hostname} is not running — starting…", flush=True)
