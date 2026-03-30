@@ -305,8 +305,16 @@ else
   ok "Virtualenv exists"
 fi
 "$VENV/bin/python3" -m pip install --quiet --upgrade pip
-"$VENV/bin/python3" -m pip install --quiet -r "$BACKEND_DIR/requirements.txt"
+"$VENV/bin/python3" -m pip install --quiet -r "$BACKEND_DIR/requirements.txt" \
+  || fail "pip install failed — check network/proxy and re-run setup.sh"
 ok "Python dependencies installed"
+
+# Verify critical venv binaries exist after install.
+[[ -x "$VENV/bin/ansible-playbook" ]] \
+  || fail "ansible-playbook not found in venv — pip install may have failed silently"
+[[ -x "$VENV/bin/websockify" ]] \
+  || fail "websockify not found in venv — pip install may have failed silently"
+ok "ansible-playbook and websockify verified in venv"
 
 # ── PHASE 6 — Frontend build ───────────────────────────────────────────────────
 progress "Frontend build"

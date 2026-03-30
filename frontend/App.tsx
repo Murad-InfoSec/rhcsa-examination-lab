@@ -130,6 +130,7 @@ const App: React.FC = () => {
 
   // Poll VNC status when active task is boot-menu, until the proxy is available.
   // Re-runs on terminalClearKey so reset/start/stop restart the poll and remount VncPanel.
+  // Stops after 30 attempts (60 s) to avoid infinite polling when VNC never becomes available.
   useEffect(() => {
     if (!isBootMenu) {
       setVncStatus(null);
@@ -137,8 +138,9 @@ const App: React.FC = () => {
     }
     setVncStatus(null);
     let cancelled = false;
+    const MAX_ATTEMPTS = 30;
     const poll = async () => {
-      while (!cancelled) {
+      for (let attempt = 0; attempt < MAX_ATTEMPTS && !cancelled; attempt++) {
         try {
           const status = await getVncStatus();
           if (cancelled) break;
